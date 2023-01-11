@@ -2,11 +2,6 @@
 # Storage Gateway
 ################################################################################
 
-locals {
-  create_smb_active_directory_settings = (var.join_smb_domain == true && length(var.domain_controllers) > 0 && length(var.domain_name) > 0 && length(var.domain_password) > 0 && length(var.domain_username) > 0)
-}
-
-
 resource "aws_storagegateway_gateway" "mysgw" {
   gateway_ip_address = var.gateway_ip_address
   gateway_name       = var.gateway_name
@@ -32,7 +27,6 @@ resource "aws_storagegateway_gateway" "mysgw" {
     }
 
   }
-
 
   lifecycle {
     ignore_changes = [

@@ -80,10 +80,10 @@ resource "vsphere_virtual_machine" "vm" {
   }
 
   ovf_deploy {
-    local_ovf_path       = var.local_ovf_path != null ? var.local_ovf_path : null
-    remote_ovf_url       = var.remote_ovf_url != null && var.local_ovf_path == null ? var.remote_ovf_url : null
-    disk_provisioning    = data.vsphere_ovf_vm_template.sgw.disk_provisioning
-    ovf_network_map      = data.vsphere_ovf_vm_template.sgw.ovf_network_map
+    local_ovf_path    = var.local_ovf_path != null ? var.local_ovf_path : null
+    remote_ovf_url    = var.remote_ovf_url != null && var.local_ovf_path == null ? var.remote_ovf_url : null
+    disk_provisioning = data.vsphere_ovf_vm_template.sgw.disk_provisioning
+    ovf_network_map   = data.vsphere_ovf_vm_template.sgw.ovf_network_map
   }
 
   lifecycle {

@@ -13,21 +13,21 @@ variable "join_smb_domain" {
 variable "domain_name" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The name of the domain that you want the gateway to join"
 }
 
 variable "domain_username" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The user name for the service account on your self-managed AD domain that SGW use to join to your AD domain"
 }
 
 variable "domain_password" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The password for the service account on your self-managed AD domain that SGW will use to join to your AD domain"
 }
 
@@ -41,7 +41,7 @@ variable "timeout_in_seconds" {
 variable "organizational_unit" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The organizational unit (OU) is a container in an Active Directory that can hold users, groups, computers, and other OUs and this parameter specifies the OU that the gateway will join within the AD domain."
 }
 
@@ -57,11 +57,11 @@ variable "timezone" {
 
 variable "gateway_type" {
   type        = string
-  description = "Type of the gateway. Valid options are FILE_S3, FILE_FSX_SMB, VTL, CACHED, STORED"
+  description = "Type of the gateway. Valid options are FILE_S3, VTL, CACHED, STORED"
   default     = "FILE_S3"
   validation {
-    condition     = contains(["FILE_S3", "FILE_FSX_SMB", "VTL", "CACHED", "STORED"], var.gateway_type)
-    error_message = "Incorrect gateway type. Valid options are FILE_S3, FILE_FSX_SMB, VTL, CACHED, STORED"
+    condition     = contains(["FILE_S3", "VTL", "CACHED", "STORED"], var.gateway_type)
+    error_message = "Incorrect gateway type. Valid options are FILE_S3, VTL, CACHED, STORED. Note: FILE_FSX_SMB is deprecated and not supported."
   }
 }
 
@@ -71,15 +71,14 @@ variable "gateway_ip_address" {
 }
 
 variable "disk_path" {
-  default     = "/dev/sdb"
   type        = string
-  description = "Disk path on the Storage Gateway VM where the cache disk resides on the OS"
+  description = "Disk path on the Storage Gateway VM where the cache disk resides. Required. Use '/dev/nvme1n1' for EC2 or '/dev/sdb' for VMware."
 }
 
 variable "disk_node" {
-  default     = "/dev/sdb"
+  default     = null
   type        = string
-  description = "Disk node on the Storage Gateway VM where the cache disk resides on the OS"
+  description = "Disk node on the Storage Gateway VM. Optional, kept for backwards compatibility."
 }
 
 variable "domain_controllers" {

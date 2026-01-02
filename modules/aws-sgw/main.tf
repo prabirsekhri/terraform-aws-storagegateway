@@ -3,7 +3,7 @@
 ################################################################################
 
 locals {
-  create_smb_active_directory_settings = (var.join_smb_domain == true && length(var.domain_controllers) > 0 && length(var.domain_name) > 0 && length(var.domain_password) > 0 && length(var.domain_username) > 0)
+  create_smb_active_directory_settings = (var.join_smb_domain == true && var.domain_name != null && var.domain_password != null && var.domain_username != null)
 }
 
 resource "aws_storagegateway_gateway" "mysgw" {
@@ -26,7 +26,7 @@ resource "aws_storagegateway_gateway" "mysgw" {
       # Optional inputs
       domain_controllers  = var.domain_controllers
       timeout_in_seconds  = var.timeout_in_seconds >= 0 ? var.timeout_in_seconds : null
-      organizational_unit = length(var.organizational_unit) > 0 ? var.organizational_unit : null
+      organizational_unit = var.organizational_unit
     }
   }
 
@@ -65,11 +65,11 @@ resource "aws_vpc_endpoint" "sgw_vpce" {
   for_each = var.create_vpc_endpoint ? toset(["sgw_vpce"]) : toset([])
 
   vpc_id            = var.vpc_id
-  service_name      = "com.amazonaws.${data.aws_region.current.name}.storagegateway"
+  service_name      = "com.amazonaws.${data.aws_region.current.id}.storagegateway"
   vpc_endpoint_type = "Interface"
 
   security_group_ids = [
-    var.create_vpc_endpoint_security_group ? aws_security_group.vpce_sg["vpce_sg"].id : var.vpc_endpoint_security_group_id
+    var.create_vpc_endpoint_security_group ? aws_security_group.vpce_sg[0].id : var.vpc_endpoint_security_group_id
   ]
 
   subnet_ids = var.vpc_endpoint_subnet_ids

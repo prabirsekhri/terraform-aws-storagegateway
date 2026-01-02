@@ -56,4 +56,5 @@ variable "client_list" {
   type        = list(any)
   sensitive   = true
   description = "The list of clients that are allowed to access the file gateway. The list must contain either valid IP addresses or valid CIDR blocks. Minimum 1 item. Maximum 100 items."
+  default     = ["10.0.0.0/8"]
 }

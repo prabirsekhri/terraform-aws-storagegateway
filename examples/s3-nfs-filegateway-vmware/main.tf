@@ -22,7 +22,7 @@ module "sgw" {
   gateway_ip_address = module.vsphere.vm_ip
   join_smb_domain    = false
   gateway_type       = "FILE_S3"
-  disk_path          = "/dev/sdb"
+  disk_node          = "SCSI (0:1)"
 }
 
 #######################################

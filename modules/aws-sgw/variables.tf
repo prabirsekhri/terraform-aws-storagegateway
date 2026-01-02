@@ -72,13 +72,14 @@ variable "gateway_ip_address" {
 
 variable "disk_path" {
   type        = string
-  description = "Disk path on the Storage Gateway VM where the cache disk resides. Required. Use '/dev/nvme1n1' for EC2 or '/dev/sdb' for VMware."
+  default     = null
+  description = "Disk path on the Storage Gateway VM where the cache disk resides. Use '/dev/nvme1n1' for EC2 Nitro instances. For VMware, use disk_node instead."
 }
 
 variable "disk_node" {
   default     = null
   type        = string
-  description = "Disk node on the Storage Gateway VM. Optional, kept for backwards compatibility."
+  description = "Disk node on the Storage Gateway VM. Use 'SCSI (0:1)' for VMware deployments. For EC2, use disk_path instead."
 }
 
 variable "domain_controllers" {

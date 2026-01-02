@@ -27,7 +27,7 @@ module "sgw" {
   domain_controllers  = var.domain_controllers
   organizational_unit = var.organizational_unit
   gateway_type        = "FILE_S3"
-  disk_path           = "/dev/sdb"
+  disk_node           = "SCSI (0:1)"
 }
 
 #######################################

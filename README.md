@@ -310,12 +310,12 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_disk_path"></a> [disk\_path](#input\_disk\_path) | Disk path on the Storage Gateway VM where the cache disk resides. Required. Use '/dev/nvme1n1' for EC2 or '/dev/sdb' for VMware. | `string` | n/a | yes |
 | <a name="input_gateway_ip_address"></a> [gateway\_ip\_address](#input\_gateway\_ip\_address) | IP Address of the Storage Gateway VM in vSphere | `string` | n/a | yes |
 | <a name="input_gateway_name"></a> [gateway\_name](#input\_gateway\_name) | Storage Gateway Name | `string` | n/a | yes |
 | <a name="input_create_vpc_endpoint"></a> [create\_vpc\_endpoint](#input\_create\_vpc\_endpoint) | Create an interface VPC endpoint for the Storage Gateway | `bool` | `false` | no |
 | <a name="input_create_vpc_endpoint_security_group"></a> [create\_vpc\_endpoint\_security\_group](#input\_create\_vpc\_endpoint\_security\_group) | Create a Security Group for the VPC Endpoint for Storage Gateway | `bool` | `false` | no |
-| <a name="input_disk_node"></a> [disk\_node](#input\_disk\_node) | Disk node on the Storage Gateway VM. Optional, kept for backwards compatibility. | `string` | `null` | no |
+| <a name="input_disk_node"></a> [disk\_node](#input\_disk\_node) | Disk node on the Storage Gateway VM. Use 'SCSI (0:1)' for VMware deployments. For EC2, use disk\_path instead. | `string` | `null` | no |
+| <a name="input_disk_path"></a> [disk\_path](#input\_disk\_path) | Disk path on the Storage Gateway VM where the cache disk resides. Use '/dev/nvme1n1' for EC2 Nitro instances. For VMware, use disk\_node instead. | `string` | `null` | no |
 | <a name="input_domain_controllers"></a> [domain\_controllers](#input\_domain\_controllers) | List of IPv4 addresses, NetBIOS names, or host names of your domain server. If you need to specify the port number include it after the colon (“:”). For example, mydc.mydomain.com:389. | `list(any)` | `[]` | no |
 | <a name="input_domain_name"></a> [domain\_name](#input\_domain\_name) | The name of the domain that you want the gateway to join | `string` | `null` | no |
 | <a name="input_domain_password"></a> [domain\_password](#input\_domain\_password) | The password for the service account on your self-managed AD domain that SGW will use to join to your AD domain | `string` | `null` | no |

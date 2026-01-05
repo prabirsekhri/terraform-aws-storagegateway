@@ -16,16 +16,18 @@ locals {
 ######################################
 
 module "sgw" {
-  depends_on         = [module.vsphere]
-  source             = "../../modules/aws-sgw"
-  gateway_name       = random_pet.name.id
-  gateway_ip_address = module.vsphere.vm_ip
-  join_smb_domain    = true
-  domain_name        = var.domain_name
-  domain_username    = var.domain_username
-  domain_password    = var.domain_password
-  domain_controllers = var.domain_controllers
-  gateway_type       = "FILE_S3"
+  depends_on          = [module.vsphere]
+  source              = "../../modules/aws-sgw"
+  gateway_name        = random_pet.name.id
+  gateway_ip_address  = module.vsphere.vm_ip
+  join_smb_domain     = true
+  domain_name         = var.domain_name
+  domain_username     = var.domain_username
+  domain_password     = var.domain_password
+  domain_controllers  = var.domain_controllers
+  organizational_unit = var.organizational_unit
+  gateway_type        = "FILE_S3"
+  disk_node           = "SCSI (0:1)"
 }
 
 #######################################
@@ -46,11 +48,11 @@ module "vsphere" {
 # Create S3 bucket for File Gateway 
 #######################################
 
-#Versioning disabled as per guidnance from the create SMB file share documentation. Read https://docs.aws.amazon.com/filegateway/latest/files3/CreatingAnSMBFileShare.html
+#Versioning disabled as per guidance from the create SMB file share documentation. Read https://docs.aws.amazon.com/filegateway/latest/files3/CreatingAnSMBFileShare.html
 #tfsec:ignore:aws-s3-enable-versioning
 module "s3_bucket" {
   source                   = "terraform-aws-modules/s3-bucket/aws"
-  version                  = ">=3.5.0"
+  version                  = "~> 5.0"
   bucket                   = lower("${random_pet.name.id}-${module.sgw.storage_gateway.gateway_id}-s3-fgw")
   control_object_ownership = true
   object_ownership         = "BucketOwnerEnforced"
@@ -94,11 +96,11 @@ module "smb_share" {
 # Create S3 bucket for Server Access Logs (Optional if already exists)
 #######################################################################
 
-#TFSEC Bucket logging for services access logs supressed. 
+#TFSEC Bucket logging for services access logs suppressed. 
 #tfsec:ignore:aws-s3-enable-bucket-logging
 module "log_delivery_bucket" {
   source                   = "terraform-aws-modules/s3-bucket/aws"
-  version                  = ">=3.5.0"
+  version                  = "~> 5.0"
   bucket                   = lower("${random_pet.name.id}-${module.sgw.storage_gateway.gateway_id}-s3-fgw-logs")
   control_object_ownership = true
   object_ownership         = "BucketOwnerEnforced"
@@ -121,20 +123,62 @@ module "log_delivery_bucket" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 resource "aws_kms_key" "sgw" {
-  description             = "KMS key for S3 object"
+  description             = "KMS key for encrypting S3 buckets and CloudWatch Logs"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.kms_key_policy.json
+}
+
+data "aws_iam_policy_document" "kms_key_policy" {
+  #checkov:skip=CKV_AWS_111:KMS key policy requires * resource to refer to the key itself
+  #checkov:skip=CKV_AWS_109:KMS key policy requires * resource to refer to the key itself
+  #checkov:skip=CKV_AWS_356:KMS key policy requires * resource to refer to the key itself
+  statement {
+    sid    = "Enable IAM User Permissions"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "Allow CloudWatch Logs"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${data.aws_region.current.id}.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt*",
+      "kms:Decrypt*",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:Describe*"
+    ]
+    resources = ["*"]
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:*"]
+    }
+  }
 }
 
 #####################################################################
 # Create log group for SMB File share (Optional if already created)
 #####################################################################
 
-#TFSEC Low warning for cloudwatch-log-group customer key supressed. 
-#tfsec:ignore:aws-cloudwatch-log-group-customer-key
 resource "aws_cloudwatch_log_group" "smbshare" {
-  name = "${local.share_name}-auditlogs"
+  name              = "${local.share_name}-auditlogs"
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.sgw.arn
 
   tags = {
     Environment = "dev"
@@ -185,7 +229,7 @@ data "aws_iam_policy_document" "bucket_sgw" {
       "s3:ListBucketMultipartUploads"
     ]
   }
-  #TFSEC Warning for /* in the S3 bucket prefix supressed as the objects are unknown before creation.
+  #TFSEC Warning for /* in the S3 bucket prefix suppressed as the objects are unknown before creation.
   #tfsec:ignore:aws-iam-no-policy-wildcards 
   statement {
     sid       = "AllowStorageGatewayBucketObjectLevelAccess"

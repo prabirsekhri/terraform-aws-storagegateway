@@ -1,7 +1,7 @@
 <!-- BEGIN_TF_DOCS -->
 # AWS VMware Storage Gateway Terraform sub-module
 
-Deployes a Storage Gateway in vSphere along with cache disk.
+Deploys a Storage Gateway in vSphere along with cache disk. The module uses the `vsphere_ovf_vm_template` data source to read OVA properties and correctly configure the guest OS type, firmware, and network mappings.
 
 For an end to end example on VMware, refer to the [s3filegateway-vmware](../../examples/s3filegateway-vmware/) example.
 
@@ -13,14 +13,14 @@ The defaults values are configured for a small deployment. Refer to the table be
 
 | Name | Version |
 |------|---------|
-| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >=1.2.0 |
-| <a name="requirement_vsphere"></a> [vsphere](#requirement\_vsphere) | >=1.25.0 |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5.7 |
+| <a name="requirement_vsphere"></a> [vsphere](#requirement\_vsphere) | >= 2.2.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | >=1.25.0 |
+| <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | >= 2.2.0 |
 
 ## Modules
 
@@ -36,6 +36,7 @@ No modules.
 | [vsphere_datastore.datastore](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs/data-sources/datastore) | data source |
 | [vsphere_host.host](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs/data-sources/host) | data source |
 | [vsphere_network.network](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs/data-sources/network) | data source |
+| [vsphere_ovf_vm_template.sgw](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs/data-sources/ovf_vm_template) | data source |
 | [vsphere_virtual_machine.aws_sg](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs/data-sources/virtual_machine) | data source |
 
 ## Inputs
@@ -54,7 +55,7 @@ No modules.
 | <a name="input_name"></a> [name](#input\_name) | Name of the storage gateway vm that will be created in vsphere | `string` | `"aws-storage-gateway"` | no |
 | <a name="input_os_size"></a> [os\_size](#input\_os\_size) | Size of the OS disk of the VM. Specified in gigabytes, default is the current VM default. Likely doesn't need to be modified | `string` | `"80"` | no |
 | <a name="input_provisioning_type"></a> [provisioning\_type](#input\_provisioning\_type) | Disk provisioning type for the vm and all attached disks | `string` | `"thick"` | no |
-| <a name="input_remote_ovf_url"></a> [remote\_ovf\_url](#input\_remote\_ovf\_url) | URL where the aws storage gateway ova is hosted. | `string` | `"https://dd958of58tzpr.cloudfront.net/aws-storage-gateway-file-s3.ova"` | no |
+| <a name="input_remote_ovf_url"></a> [remote\_ovf\_url](#input\_remote\_ovf\_url) | URL where the aws storage gateway ova is hosted. | `string` | `"https://dd958of58tzpr.cloudfront.net/aws-storage-gateway-file-s3-gateway-v2-x86_64.ova"` | no |
 
 ## Outputs
 

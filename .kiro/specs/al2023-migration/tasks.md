@@ -33,85 +33,103 @@ This plan outlines the implementation tasks for building the Storage Gateway AL2
   - Verify existing examples still work (no breaking changes)
   - Ask the user if questions arise
 
-- [ ] 3. Create Migration Example Structure
-  - [ ] 3.1 Create base file structure
-    - Create `examples/ec2-sgw-al2023-migration/` directory
+- [ ] 3. Create EC2 Migration Example
+  - [ ] 3.1 Create EC2 directory structure
+    - Create `examples/sgw-al2023-migration/ec2/` directory
     - Create `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 3.2 Implement pre-flight validation
+  - [ ] 3.2 Implement EC2 pre-flight validation
     - Add data source for old instance
     - Add `terraform_data` resource with preconditions
     - Validate instance state is "stopped"
     - Add variable validations for resource ID formats
-    - _Requirements: 1.1, 1.2, 1.3, 1.4_
+    - _Requirements: 1.1, 1.2, 1.4, 1.5, 1.6_
 
   - [ ] 3.3 Implement EBS snapshot backup
     - Add `aws_ebs_snapshot` resource with for_each
     - Implement conditional creation based on `create_snapshots` variable
     - Add appropriate tagging
-    - _Requirements: 2.1, 2.2, 2.3_
+    - _Requirements: 2.1, 2.3, 2.4_
 
-  - [ ] 3.4 Implement instance provisioning using ec2-sgw module
+  - [ ] 3.4 Implement EC2 instance provisioning using ec2-sgw module
     - Call ec2-sgw module with migration settings
     - Set create_cache_volume=false, create_eip=false
     - Implement instance type upgrade mapping
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
 
-  - [ ] 3.5 Implement cache volume attachment
+  - [ ] 3.5 Implement EBS cache volume attachment
     - Add `aws_volume_attachment` resources with for_each
     - Generate sequential device names
-    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 4. Documentation and Examples
-  - [ ] 4.1 Create README.md with usage instructions
-    - Document prerequisites
-    - Add usage examples
-    - Document input variables and outputs
-    - _Requirements: 6.2, 6.3_
+- [ ] 4. Create VMware Migration Documentation
+  - [ ] 4.1 Create VMware directory structure
+    - Create `examples/sgw-al2023-migration/vmware/` directory
+    - Create README.md, variables.tf, terraform.tfvars.example
+    - _Requirements: 4.1_
 
-  - [ ] 4.2 Create terraform.tfvars.example
-    - Provide example values for all required variables
-    - Include comments explaining each variable
-    - _Requirements: 6.3_
+  - [ ] 4.2 Document OVA deployment process
+    - Add AL2023 OVA download URL
+    - Document vSphere/ESXi deployment steps
+    - Document network configuration
+    - _Requirements: 4.2, 4.3, 4.4_
 
-  - [ ] 4.3 Document rollback procedures
-    - Add rollback section to README
-    - Include snapshot restoration steps
-    - _Requirements: 7.1, 7.2, 7.3_
+  - [ ] 4.3 Document VMDK cache disk migration
+    - Document VMDK detachment from old VM
+    - Document VMDK attachment to new VM
+    - Document SCSI controller and disk_node configuration
+    - _Requirements: 4.5, 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 5. Checkpoint - Core Infrastructure Complete
-  - Ensure terraform init/validate passes
-  - Review outputs provide clear next steps
+- [ ] 5. Documentation
+  - [ ] 5.1 Create main README.md
+    - Overview covering both EC2 and VMware
+    - Prerequisites for each platform
+    - Quick start guides
+    - _Requirements: 8.1, 8.2, 8.3_
+
+  - [ ] 5.2 Create terraform.tfvars.example files
+    - EC2 example with instance IDs and volume IDs
+    - VMware example with gateway IP and SSH key path
+    - _Requirements: 8.1_
+
+  - [ ] 5.3 Document rollback procedures
+    - EC2 rollback with EBS snapshot restoration
+    - VMware rollback with VM snapshot restoration
+    - _Requirements: 9.1, 9.2, 9.3, 9.4_
+
+- [ ] 6. Checkpoint - Infrastructure Complete
+  - Ensure terraform init/validate passes for EC2 example
+  - Review VMware documentation is complete
   - Ask the user if questions arise
 
-- [ ] 6. Ansible Migration Execution
-  - [ ] 6.1 Create Ansible directory structure
+- [ ] 7. Ansible Migration Execution
+  - [ ] 7.1 Create Ansible directory structure
     - Create `ansible/` directory with migrate.yml, verify.yml
     - Create `ansible/inventory/` with ec2.yml.example and vmware.yml.example
     - Create ansible.cfg and requirements.yml
-    - _Requirements: 5.1, 5.2, 8.1, 8.2_
+    - _Requirements: 7.1, 7.2, 10.1, 10.2_
 
-  - [ ] 6.2 Implement migration playbook
+  - [ ] 7.2 Implement migration playbook
     - Add health check task with retries
     - Add migration API call task
     - Add error handling and result display
-    - _Requirements: 5.3, 5.4, 5.5, 5.6_
+    - _Requirements: 7.3, 7.4, 7.5, 7.6_
 
-  - [ ] 6.3 Implement verification playbook
+  - [ ] 7.3 Implement verification playbook
     - Add gateway status verification
     - Add file share connectivity check
-    - _Requirements: 6.1_
+    - _Requirements: 8.1_
 
-  - [ ] 6.4 Create inventory templates
+  - [ ] 7.4 Create inventory templates
     - EC2 template using AWS SSM connection plugin
     - VMware template using SSH connection
-    - _Requirements: 5.7, 8.3, 8.4_
+    - _Requirements: 7.7, 7.8, 10.3, 10.4_
 
-- [ ] 7. Final Checkpoint
+- [ ] 8. Final Checkpoint
   - All files in place
-  - Documentation complete
-  - Terraform validate passes
+  - Documentation complete for both EC2 and VMware
+  - Terraform validate passes for EC2 example
   - Ansible playbooks syntax validated
   - ec2-sgw module backward compatible
   - Ask the user if questions arise
@@ -120,7 +138,9 @@ This plan outlines the implementation tasks for building the Storage Gateway AL2
 
 - Task 1 modifies the existing ec2-sgw module (backward compatible changes)
 - All new variables have defaults that preserve existing behavior
-- Ansible is used for migration execution (works for both EC2 and VMware)
+- EC2 migration is fully automated via Terraform + Ansible
+- VMware migration is documentation + Ansible (OVA deployment is manual via vSphere)
+- Ansible playbooks are shared between EC2 and VMware
 - EC2 uses SSM Session Manager as Ansible connection (no SSH needed)
 - VMware uses SSH connection
 - ec2-sgw module changes should be tested with existing examples before proceeding

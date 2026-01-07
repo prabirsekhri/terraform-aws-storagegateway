@@ -104,29 +104,36 @@ output "instance_id" {
 ## File Structure
 
 ```
-# Module changes
+# Module changes (EC2 only)
 modules/ec2-sgw/
 ├── main.tf              # Add count to EBS/EIP resources, add iam_instance_profile
 ├── variables.tf         # Add create_cache_volume, create_eip, iam_instance_profile
 └── outputs.tf           # Add instance_id output
 
-# Migration example (works for both EC2 and VMware)
+# Migration examples
 examples/sgw-al2023-migration/
-├── main.tf              # Core migration orchestration
-├── variables.tf         # Input variables with validation
-├── outputs.tf           # Migration results and next steps
-├── versions.tf          # Provider requirements
-├── terraform.tfvars.example
-├── README.md
+├── ec2/                         # EC2-specific migration
+│   ├── main.tf                  # Uses ec2-sgw module with migration settings
+│   ├── variables.tf             # EC2-specific variables
+│   ├── outputs.tf
+│   ├── versions.tf
+│   └── terraform.tfvars.example
 │
-└── ansible/             # Ansible playbooks for migration execution
-    ├── migrate.yml      # Main migration playbook
-    ├── verify.yml       # Post-migration verification
-    ├── inventory/
-    │   ├── ec2.yml.example      # EC2 inventory template (SSM connection)
-    │   └── vmware.yml.example   # VMware inventory template (SSH connection)
-    ├── ansible.cfg      # Ansible configuration
-    └── requirements.yml # Ansible Galaxy dependencies
+├── vmware/                      # VMware-specific migration (documentation + Ansible)
+│   ├── README.md                # VMware OVA deployment and disk migration guide
+│   ├── variables.tf             # VMware-specific variables (gateway_ip, ssh_key, etc.)
+│   └── terraform.tfvars.example
+│
+├── ansible/                     # Shared Ansible playbooks (works for both)
+│   ├── migrate.yml              # Main migration playbook
+│   ├── verify.yml               # Post-migration verification
+│   ├── inventory/
+│   │   ├── ec2.yml.example      # EC2 inventory (SSM connection)
+│   │   └── vmware.yml.example   # VMware inventory (SSH connection)
+│   ├── ansible.cfg
+│   └── requirements.yml
+│
+└── README.md                    # Overview covering both platforms
 ```
 
 ## Components and Interfaces

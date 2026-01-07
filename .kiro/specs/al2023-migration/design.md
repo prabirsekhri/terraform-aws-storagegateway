@@ -12,22 +12,23 @@ This design describes the Terraform-based automation for migrating EC2 Storage G
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │  Pre-flight  │───▶│   Backup     │───▶│  ec2-sgw     │       │
-│  │  Validation  │    │  Snapshots   │    │  Module      │       │
-│  └──────────────┘    └──────────────┘    │(migration    │       │
-│                                          │ mode)        │       │
-│                                          └──────────────┘       │
+│  │  Pre-flight  │───▶│   Backup     │───▶│  Provision   │       │
+│  │  Validation  │    │  (EC2 only)  │    │  New Gateway │       │
+│  └──────────────┘    └──────────────┘    └──────────────┘       │
 │                                                 │                │
 │                                                 ▼                │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
 │  │   Verify &   │◀───│   Execute    │◀───│   Attach     │       │
-│  │   Output     │    │  Migration   │    │   Existing   │       │
-│  └──────────────┘    └──────────────┘    │   Volumes    │       │
+│  │   Output     │    │  Migration   │    │   Volumes    │       │
+│  └──────────────┘    └──────────────┘    │  (EC2 only)  │       │
 │                            │             └──────────────┘       │
 │                            ▼                                     │
 │              ┌─────────────────────────┐                        │
-│              │   SSM Run Command       │                        │
-│              │   (Migration Execution) │                        │
+│              │   Ansible Playbook      │                        │
+│              │   (EC2 & VMware)        │                        │
+│              │                         │                        │
+│              │  EC2: SSM connection    │                        │
+│              │  VMware: SSH connection │                        │
 │              └─────────────────────────┘                        │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -109,23 +110,30 @@ modules/ec2-sgw/
 ├── variables.tf         # Add create_cache_volume, create_eip, iam_instance_profile
 └── outputs.tf           # Add instance_id output
 
-# Migration example
-examples/ec2-sgw-al2023-migration/
-├── main.tf              # Uses ec2-sgw module with migration_mode settings
+# Migration example (works for both EC2 and VMware)
+examples/sgw-al2023-migration/
+├── main.tf              # Core migration orchestration
 ├── variables.tf         # Input variables with validation
 ├── outputs.tf           # Migration results and next steps
 ├── versions.tf          # Provider requirements
-├── ssm.tf               # SSM document and execution
-├── iam.tf               # IAM role/policy for SSM (optional)
 ├── terraform.tfvars.example
-└── README.md
+├── README.md
+│
+└── ansible/             # Ansible playbooks for migration execution
+    ├── migrate.yml      # Main migration playbook
+    ├── verify.yml       # Post-migration verification
+    ├── inventory/
+    │   ├── ec2.yml.example      # EC2 inventory template (SSM connection)
+    │   └── vmware.yml.example   # VMware inventory template (SSH connection)
+    ├── ansible.cfg      # Ansible configuration
+    └── requirements.yml # Ansible Galaxy dependencies
 ```
 
 ## Components and Interfaces
 
 ### Migration Example (main.tf)
 
-Uses the ec2-sgw module with migration-specific settings:
+For EC2, uses the ec2-sgw module with migration-specific settings:
 
 ```hcl
 # Provision new AL2023 instance using ec2-sgw module
@@ -162,79 +170,87 @@ resource "aws_volume_attachment" "cache" {
 }
 ```
 
-### SSM Execution (ssm.tf)
+### Ansible Playbooks (ansible/)
 
-Uses AWS Systems Manager Run Command to execute the migration:
+Unified playbooks that work for both EC2 and VMware:
 
-```hcl
-resource "aws_ssm_document" "sgw_migrate" {
-  name            = "SGW-AL2023-Migration-${var.gateway_id}"
-  document_type   = "Command"
-  document_format = "YAML"
-  
-  content = yamlencode({
-    schemaVersion = "2.2"
-    description   = "Execute Storage Gateway AL2023 migration"
-    mainSteps = [{
-      action = "aws:runShellScript"
-      name   = "executeMigration"
-      inputs = {
-        runCommand = [
-          "#!/bin/bash",
-          "set -e",
-          "echo 'Waiting for gateway API to be ready...'",
-          "for i in {1..30}; do curl -s http://localhost:8080/health && break || sleep 10; done",
-          "echo 'Executing migration...'",
-          "curl -X POST http://localhost:8080/migrate -d '{\"gatewayId\":\"${var.gateway_id}\"}'",
-        ]
-        timeoutSeconds = var.migration_timeout_seconds
-      }
-    }]
-  })
-}
+```yaml
+# ansible/migrate.yml
+---
+- name: Execute Storage Gateway AL2023 Migration
+  hosts: gateway
+  gather_facts: false
+  vars:
+    gateway_id: "{{ lookup('env', 'SGW_GATEWAY_ID') }}"
+    migration_timeout: 600
 
-resource "aws_ssm_association" "migrate" {
-  name = aws_ssm_document.sgw_migrate.name
-  
-  targets {
-    key    = "InstanceIds"
-    values = [aws_instance.new_sgw.id]
-  }
-  
-  depends_on = [aws_volume_attachment.cache]
-}
+  tasks:
+    - name: Wait for gateway API to be ready
+      uri:
+        url: "http://localhost:8080/health"
+        method: GET
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 30
+      delay: 10
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Execute migration command
+      uri:
+        url: "http://localhost:8080/migrate"
+        method: POST
+        body_format: json
+        body:
+          gatewayId: "{{ gateway_id }}"
+        timeout: "{{ migration_timeout }}"
+      register: migration_result
+
+    - name: Display migration result
+      debug:
+        var: migration_result.json
 ```
 
-### IAM for SSM (iam.tf - optional)
+```yaml
+# ansible/inventory/ec2.yml.example
+---
+# EC2 inventory using AWS SSM Session Manager connection
+plugin: amazon.aws.aws_ec2
+regions:
+  - us-east-1
+filters:
+  instance-id: "{{ lookup('env', 'SGW_INSTANCE_ID') }}"
 
-```hcl
-resource "aws_iam_role" "sgw_ssm" {
-  count = var.create_iam_role ? 1 : 0
-  name  = "sgw-migration-ssm-${var.gateway_id}"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      }
-    }]
-  })
-}
+# Use SSM Session Manager for connection (no SSH needed)
+compose:
+  ansible_host: instance_id
+  ansible_connection: aws_ssm
+  ansible_aws_ssm_region: "{{ placement.region }}"
+```
 
-resource "aws_iam_role_policy_attachment" "ssm_managed" {
-  count      = var.create_iam_role ? 1 : 0
-  role       = aws_iam_role.sgw_ssm[0].name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
+```yaml
+# ansible/inventory/vmware.yml.example
+---
+# VMware inventory using SSH connection
+all:
+  hosts:
+    gateway:
+      ansible_host: "{{ lookup('env', 'SGW_GATEWAY_IP') }}"
+      ansible_user: admin
+      ansible_ssh_private_key_file: "{{ lookup('env', 'SGW_SSH_KEY_PATH') }}"
+      ansible_connection: ssh
+```
 
-resource "aws_iam_instance_profile" "sgw_ssm" {
-  count = var.create_iam_role ? 1 : 0
-  name  = "sgw-migration-ssm-${var.gateway_id}"
-  role  = aws_iam_role.sgw_ssm[0].name
-}
+```ini
+# ansible/ansible.cfg
+[defaults]
+inventory = inventory/
+host_key_checking = False
+timeout = 30
+retries = 3
+
+[ssh_connection]
+ssh_args = -o ControlMaster=auto -o ControlPersist=60s
 ```
 
 ## Data Models

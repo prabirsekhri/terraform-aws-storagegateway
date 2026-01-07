@@ -63,18 +63,19 @@ This specification defines the requirements for automating the migration of EC2-
 3. THE Migration_Tool SHALL assign sequential device names (/dev/sdb, /dev/sdc, etc.) to attached volumes
 4. WHEN volume attachment fails, THE Migration_Tool SHALL report the error with volume ID and reason
 
-### Requirement 5: Migration Command Execution via SSM
+### Requirement 5: Migration Command Execution via Ansible
 
-**User Story:** As an infrastructure operator, I want the migration command executed automatically via SSM Run Command, so that I don't need manual SSH access to complete the migration.
+**User Story:** As an infrastructure operator, I want the migration command executed automatically via Ansible, so that I have a unified approach for both EC2 and VMware gateways.
 
 #### Acceptance Criteria
 
-1. THE Migration_Tool SHALL use AWS Systems Manager Run Command to execute the migration API call
-2. THE Migration_Tool SHALL create an SSM document defining the migration command
-3. THE Migration_Tool SHALL pass the gateway_id to the migration endpoint
-4. WHEN the migration command fails, THE Migration_Tool SHALL capture and report the error from SSM
-5. THE Migration_Tool SHALL support configurable timeout for the migration command (default: 600 seconds)
-6. THE Migration_Tool SHALL require the EC2 instance to have SSM agent installed and IAM permissions
+1. THE Migration_Tool SHALL use Ansible playbooks to execute the migration API call
+2. THE Migration_Tool SHALL provide playbooks that work for both EC2 and VMware platforms
+3. THE Migration_Tool SHALL wait for the gateway API to be ready before executing migration
+4. THE Migration_Tool SHALL pass the gateway_id to the migration endpoint
+5. WHEN the migration command fails, THE Migration_Tool SHALL capture and report the error from Ansible
+6. THE Migration_Tool SHALL support configurable timeout for the migration command (default: 600 seconds)
+7. THE Migration_Tool SHALL support connection via SSH (for VMware) or AWS SSM plugin (for EC2)
 
 ### Requirement 6: Post-migration Verification
 
@@ -96,16 +97,17 @@ This specification defines the requirements for automating the migration of EC2-
 2. IF snapshots were created, THE Migration_Tool SHALL reference snapshot IDs in rollback instructions
 3. THE Migration_Tool SHALL NOT automatically terminate the old instance
 
-### Requirement 8: SSM Prerequisites and IAM
+### Requirement 8: Ansible Prerequisites
 
-**User Story:** As an infrastructure operator, I want clear IAM requirements for SSM execution, so that I can configure permissions correctly.
+**User Story:** As an infrastructure operator, I want clear prerequisites for Ansible execution, so that I can configure my environment correctly.
 
 #### Acceptance Criteria
 
-1. THE Migration_Tool SHALL document required IAM permissions for SSM Run Command
-2. THE Migration_Tool SHALL optionally create an IAM instance profile with SSM permissions
-3. WHERE an existing instance profile is provided, THE Migration_Tool SHALL use it instead of creating a new one
-4. THE Migration_Tool SHALL verify SSM agent connectivity before executing migration command
+1. THE Migration_Tool SHALL document required Ansible version and dependencies
+2. THE Migration_Tool SHALL provide inventory templates for both EC2 and VMware targets
+3. THE Migration_Tool SHALL support SSH key-based authentication for VMware gateways
+4. THE Migration_Tool SHALL support AWS SSM Session Manager plugin as Ansible connection for EC2
+5. THE Migration_Tool SHALL include ansible.cfg with recommended settings
 
 ### Requirement 9: ec2-sgw Module Enhancements
 

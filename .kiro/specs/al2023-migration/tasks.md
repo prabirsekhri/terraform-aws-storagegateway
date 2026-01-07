@@ -85,28 +85,34 @@ This plan outlines the implementation tasks for building the Storage Gateway AL2
   - Review outputs provide clear next steps
   - Ask the user if questions arise
 
-- [ ] 6. SSM Migration Execution
-  - [ ] 6.1 Create SSM document for migration
-    - Create `ssm.tf` with `aws_ssm_document` resource
-    - Define migration command with health check and curl
-    - Add configurable timeout
-    - _Requirements: 5.1, 5.2, 5.3, 5.5_
+- [ ] 6. Ansible Migration Execution
+  - [ ] 6.1 Create Ansible directory structure
+    - Create `ansible/` directory with migrate.yml, verify.yml
+    - Create `ansible/inventory/` with ec2.yml.example and vmware.yml.example
+    - Create ansible.cfg and requirements.yml
+    - _Requirements: 5.1, 5.2, 8.1, 8.2_
 
-  - [ ] 6.2 Implement SSM association/execution
-    - Add `aws_ssm_association` to trigger migration
-    - Ensure proper dependency on volume attachment
-    - _Requirements: 5.1, 5.4_
+  - [ ] 6.2 Implement migration playbook
+    - Add health check task with retries
+    - Add migration API call task
+    - Add error handling and result display
+    - _Requirements: 5.3, 5.4, 5.5, 5.6_
 
-  - [ ] 6.3 Create optional IAM resources
-    - Create `iam.tf` with conditional IAM role
-    - Add SSM managed policy attachment
-    - Create instance profile
-    - _Requirements: 8.1, 8.2, 8.3_
+  - [ ] 6.3 Implement verification playbook
+    - Add gateway status verification
+    - Add file share connectivity check
+    - _Requirements: 6.1_
+
+  - [ ] 6.4 Create inventory templates
+    - EC2 template using AWS SSM connection plugin
+    - VMware template using SSH connection
+    - _Requirements: 5.7, 8.3, 8.4_
 
 - [ ] 7. Final Checkpoint
   - All files in place
   - Documentation complete
   - Terraform validate passes
+  - Ansible playbooks syntax validated
   - ec2-sgw module backward compatible
   - Ask the user if questions arise
 
@@ -114,6 +120,7 @@ This plan outlines the implementation tasks for building the Storage Gateway AL2
 
 - Task 1 modifies the existing ec2-sgw module (backward compatible changes)
 - All new variables have defaults that preserve existing behavior
-- SSM Run Command is used for migration execution
-- IAM role creation is optional - users can provide existing instance profile
+- Ansible is used for migration execution (works for both EC2 and VMware)
+- EC2 uses SSM Session Manager as Ansible connection (no SSH needed)
+- VMware uses SSH connection
 - ec2-sgw module changes should be tested with existing examples before proceeding

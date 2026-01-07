@@ -101,14 +101,90 @@ output "instance_id" {
 }
 ```
 
+### vmware-sgw Module Enhancements
+
+The existing `modules/vmware-sgw` module needs these additions to support migration:
+
+```hcl
+# New variables to add to modules/vmware-sgw/variables.tf
+
+variable "create_cache_disk" {
+  type        = bool
+  description = "Create a new cache disk. Set to false for migration scenarios."
+  default     = true
+}
+
+variable "existing_cache_disk_path" {
+  type        = string
+  description = "Path to existing VMDK cache disk for migration. Only used when create_cache_disk is false."
+  default     = null
+}
+```
+
+```hcl
+# Changes to modules/vmware-sgw/main.tf
+
+resource "vsphere_virtual_machine" "vm" {
+  # ... existing config
+
+  disk {
+    label            = "os"
+    unit_number      = 0
+    size             = var.os_size
+    thin_provisioned = false
+    eagerly_scrub    = false
+  }
+
+  # Conditionally create cache disk
+  dynamic "disk" {
+    for_each = var.create_cache_disk ? [1] : []
+    content {
+      label            = "cache"
+      unit_number      = 1
+      size             = var.cache_size
+      thin_provisioned = false
+      eagerly_scrub    = false
+    }
+  }
+
+  # Attach existing cache disk for migration
+  dynamic "disk" {
+    for_each = var.existing_cache_disk_path != null ? [1] : []
+    content {
+      label        = "cache"
+      unit_number  = 1
+      attach       = true
+      path         = var.existing_cache_disk_path
+      datastore_id = data.vsphere_datastore.datastore.id
+    }
+  }
+
+  # ... rest of config
+}
+```
+
+```hcl
+# New output to add to modules/vmware-sgw/outputs.tf
+
+output "vm_id" {
+  value       = vsphere_virtual_machine.vm.id
+  description = "The vSphere VM ID of the Storage Gateway"
+}
+```
+
 ## File Structure
 
 ```
-# Module changes (EC2 only)
+# Module changes
 modules/ec2-sgw/
 ├── main.tf              # Add count to EBS/EIP resources, add iam_instance_profile
 ├── variables.tf         # Add create_cache_volume, create_eip, iam_instance_profile
 └── outputs.tf           # Add instance_id output
+
+modules/vmware-sgw/
+├── main.tf              # Add dynamic disk blocks for migration support
+├── variables.tf         # Add create_cache_disk, existing_cache_disk_path
+└── outputs.tf           # Add vm_id output
 
 # Migration examples
 examples/sgw-al2023-migration/
@@ -119,9 +195,11 @@ examples/sgw-al2023-migration/
 │   ├── versions.tf
 │   └── terraform.tfvars.example
 │
-├── vmware/                      # VMware-specific migration (documentation + Ansible)
-│   ├── README.md                # VMware OVA deployment and disk migration guide
-│   ├── variables.tf             # VMware-specific variables (gateway_ip, ssh_key, etc.)
+├── vmware/                      # VMware-specific migration
+│   ├── main.tf                  # Uses vmware-sgw module with migration settings
+│   ├── variables.tf             # VMware-specific variables
+│   ├── outputs.tf
+│   ├── versions.tf
 │   └── terraform.tfvars.example
 │
 ├── ansible/                     # Shared Ansible playbooks (works for both)

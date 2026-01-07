@@ -59,15 +59,15 @@ This specification defines the requirements for automating the migration of AWS 
 
 ### Requirement 4: New Gateway Provisioning (VMware)
 
-**User Story:** As an infrastructure operator, I want a new AL2023 VMware gateway deployed, so that I can migrate my on-premises gateway.
+**User Story:** As an infrastructure operator, I want a new AL2023 VMware gateway deployed using Terraform, so that I can automate my on-premises gateway migration.
 
 #### Acceptance Criteria
 
-1. WHEN platform is "vmware", THE Migration_Tool SHALL document the OVA deployment process
-2. THE Migration_Tool SHALL provide the download URL for the AL2023 OVA from AWS
-3. THE Migration_Tool SHALL document vSphere/ESXi deployment steps
-4. THE Migration_Tool SHALL document network configuration to match the old gateway
-5. THE Migration_Tool SHALL document cache disk attachment from the old VM to the new VM
+1. WHEN platform is "vmware", THE Migration_Tool SHALL use the existing vmware-sgw module to deploy the new AL2023 VM
+2. THE vmware-sgw module SHALL support a `create_cache_disk` variable (default: true) that skips cache disk creation when false
+3. THE Migration_Tool SHALL configure the new VM in the same datacenter, cluster, and network as the old gateway
+4. THE Migration_Tool SHALL use the AL2023 OVA URL from AWS
+5. THE vmware-sgw module SHALL output the VM ID for use by migration automation
 
 ### Requirement 5: Cache Disk Migration (EC2)
 
@@ -82,14 +82,15 @@ This specification defines the requirements for automating the migration of AWS 
 
 ### Requirement 6: Cache Disk Migration (VMware)
 
-**User Story:** As an infrastructure operator, I want existing VMDK cache disks attached to the new VMware gateway, so that cached data is preserved.
+**User Story:** As an infrastructure operator, I want existing VMDK cache disks attached to the new VMware gateway via Terraform, so that cached data is preserved.
 
 #### Acceptance Criteria
 
-1. WHEN platform is "vmware", THE Migration_Tool SHALL document the VMDK detachment process from old VM
-2. THE Migration_Tool SHALL document the VMDK attachment process to new VM
-3. THE Migration_Tool SHALL specify the correct SCSI controller and disk node configuration
+1. WHEN platform is "vmware", THE Migration_Tool SHALL attach existing VMDK cache disks to the new VM
+2. THE Migration_Tool SHALL use vsphere_virtual_disk data source to reference existing VMDKs
+3. THE Migration_Tool SHALL configure the correct SCSI controller and unit number
 4. THE Migration_Tool SHALL reference the disk_node variable format (e.g., "SCSI (0:1)")
+5. WHEN disk attachment fails, THE Migration_Tool SHALL report the error with disk path and reason
 
 ### Requirement 7: Migration Command Execution via Ansible
 
@@ -152,3 +153,16 @@ This specification defines the requirements for automating the migration of AWS 
 4. WHEN create_eip is false, THE ec2-sgw module SHALL skip aws_eip and aws_eip_association resources
 5. THE ec2-sgw module SHALL add an `iam_instance_profile` variable to attach existing IAM profiles
 6. THE ec2-sgw module SHALL output the instance_id for use by migration automation
+
+### Requirement 12: vmware-sgw Module Enhancements
+
+**User Story:** As a module maintainer, I want the vmware-sgw module to support migration scenarios, so that migration examples can reuse existing module code.
+
+#### Acceptance Criteria
+
+1. THE vmware-sgw module SHALL add a `create_cache_disk` variable (default: true)
+2. WHEN create_cache_disk is false, THE vmware-sgw module SHALL skip the cache disk block in vsphere_virtual_machine
+3. THE vmware-sgw module SHALL add an `existing_cache_disk_path` variable for attaching existing VMDKs
+4. WHEN existing_cache_disk_path is provided, THE vmware-sgw module SHALL attach the existing disk instead of creating new
+5. THE vmware-sgw module SHALL output the vm_id for use by migration automation
+6. THE vmware-sgw module SHALL support the AL2023 OVA URL as default for remote_ovf_url

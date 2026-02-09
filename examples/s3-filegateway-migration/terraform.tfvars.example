@@ -1,0 +1,27 @@
+################################################################################
+# S3 File Gateway Migration Configuration Example
+################################################################################
+
+# Required: Gateway ID (instance ID will be auto-discovered from tags)
+gateway_id = "sgw-12A3456B"
+
+# Optional: Specify instance ID if auto-discovery fails or for explicit control
+# old_instance_id = "i-0123456789abcdef0"
+
+# Optional: Gateway type (default: FILE_S3)
+# gateway_type = "FILE_S3"
+
+# Optional: Instance type for new gateway (default: same as old gateway)
+# Recommended AL2023-compatible types: m7i.xlarge, m7i.2xlarge, r7i.xlarge, etc.
+# instance_type = "m7i.xlarge"
+
+# Optional: Reuse existing Elastic IP (default: false)
+# reuse_eip = false
+
+# Optional: Root block device configuration
+# root_block_device = {
+#   kms_key_id  = null    # Optional: KMS key for encryption
+#   disk_size   = 80      # Minimum 80 GB
+#   volume_type = "gp3"   # gp2, gp3, io1, io2, st1, sc1
+# }
+

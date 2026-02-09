@@ -1,0 +1,435 @@
+
+################################################################################
+# Storage Gateway AL2023 Migration Playbook
+# Automates the manual steps after Terraform provisioning
+################################################################################
+
+- name: Execute Storage Gateway AL2023 Migration
+  hosts: localhost
+  gather_facts: true
+  vars:
+    # These will be passed from Terraform outputs or command line
+    old_instance_id: "{{ lookup('env', 'OLD_INSTANCE_ID') }}"
+    new_instance_id: "{{ lookup('env', 'NEW_INSTANCE_ID') }}"
+    gateway_id: "{{ lookup('env', 'GATEWAY_ID') }}"
+    new_gateway_ip: "{{ lookup('env', 'NEW_GATEWAY_IP') }}"
+    aws_region: "{{ lookup('env', 'AWS_REGION') | default('us-east-1', true) }}"
+    migration_timeout: 600
+
+  tasks:
+    - name: Validate required variables
+      assert:
+        that:
+          - new_instance_id is defined and new_instance_id != ""
+          - gateway_id is defined and gateway_id != ""
+          - new_gateway_ip is defined and new_gateway_ip != ""
+        fail_msg: "Required environment variables are missing. Set NEW_INSTANCE_ID, GATEWAY_ID, NEW_GATEWAY_IP"
+
+    ############################################################################
+    # Step 1: Discover Old Instance ID from Gateway ID (if not provided)
+    ############################################################################
+
+    - name: Check if old instance ID was provided
+      set_fact:
+        instance_id_provided: "{{ old_instance_id is defined and old_instance_id != '' }}"
+
+    - name: Get AWS account ID
+      amazon.aws.aws_caller_info:
+      register: caller_info
+      when: not instance_id_provided
+
+    - name: Construct gateway ARN
+      set_fact:
+        gateway_arn: "arn:aws:storagegateway:{{ aws_region }}:{{ caller_info.account }}:gateway/{{ gateway_id }}"
+      when: not instance_id_provided
+
+    - name: Fetch gateway information from AWS Storage Gateway API
+      command: >
+        aws storagegateway describe-gateway-information
+        --gateway-arn "{{ gateway_arn }}"
+        --region "{{ aws_region }}"
+        --output json
+      register: gateway_info_raw
+      when: not instance_id_provided
+      changed_when: false
+
+    - name: Parse gateway information
+      set_fact:
+        gateway_info: "{{ gateway_info_raw.stdout | from_json }}"
+      when: not instance_id_provided
+
+    - name: Extract EC2 instance ID from gateway information
+      set_fact:
+        old_instance_id: "{{ gateway_info.Ec2InstanceId }}"
+      when: not instance_id_provided
+
+    - name: Validate old instance ID was discovered
+      assert:
+        that:
+          - old_instance_id is defined
+          - old_instance_id != ""
+          - old_instance_id is match("^i-[a-f0-9]{8,17}$")
+        fail_msg: "Failed to discover old instance ID from gateway {{ gateway_id }}"
+
+    - name: Display migration information
+      debug:
+        msg:
+          - "Starting Storage Gateway Migration"
+          - "Gateway ID: {{ gateway_id }}"
+          - "Old Instance: {{ old_instance_id }} {{ '(discovered)' if not instance_id_provided else '(provided)' }}"
+          - "New Instance: {{ new_instance_id }}"
+          - "New Gateway IP: {{ new_gateway_ip }}"
+          - "Region: {{ aws_region }}"
+
+    ############################################################################
+    # Step 2: Discover all volumes attached to the existing gateway instance
+    ############################################################################
+
+    - name: Get all volumes attached to old instance
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          attachment.instance-id: "{{ old_instance_id }}"
+      register: old_volumes
+
+    - name: Validate volumes were found
+      assert:
+        that:
+          - old_volumes.volumes | length > 0
+        fail_msg: "No volumes found attached to instance {{ old_instance_id }}"
+        success_msg: "Found {{ old_volumes.volumes | length }} volume(s) to migrate"
+
+    - name: Display discovered volume configuration
+      debug:
+        msg:
+          - "=========================================="
+          - "Old Gateway Volume Configuration"
+          - "=========================================="
+          - "Total Volumes to Migrate: {{ old_volumes.volumes | length }}"
+          # - ""
+          # - "MIGRATION PROCESS:"
+          # - "  1. Detach ALL volumes from old instance: {{ old_instance_id }}"
+          # - "  2. Attach ALL volumes as new disks to new instance: {{ new_instance_id }}"
+          # - "     - Volumes will be attached at /dev/sdf, /dev/sdg, /dev/sdh, etc."
+          # - "  3. Start new instance (AL2023 root at /dev/xvda + ALL old volumes)"
+          # - "  4. Trigger migration via API"
+          # - "  5. Migration complete!"
+          # - ""
+          - "NOTE: New instance has its own AL2023 root disk at /dev/xvda"
+          - "      ALL old gateway volumes (including old root) attached as additional disks"
+          - "=========================================="
+
+    - name: Save volume configuration to file
+      copy:
+        content: |
+          # Storage Gateway Migration - Volume Configuration
+          # Generated: {{ ansible_date_time.iso8601 }}
+          # Old Instance: {{ old_instance_id }}
+          # New Instance: {{ new_instance_id }}
+          # Gateway ID: {{ gateway_id }}
+          
+          New Instance Root (AL2023):
+            Device: /dev/xvda (created by Terraform)
+          
+          Old Gateway Volumes ({{ old_volumes.volumes | length }} total - ALL will be migrated):
+          {% for vol in old_volumes.volumes %}
+            - ID: {{ vol.id }}
+              New Device: /dev/sd{{ 'fghijklmn'[loop.index0] }}
+              Size: {{ vol.size }} GB
+          {% endfor %}
+          
+          NOTE: ALL old volumes (including old root) attached as NEW volumes to new instance
+                Device names from old instance are NOT preserved
+        dest: "./migration-volumes-{{ ansible_date_time.epoch }}.txt"
+      delegate_to: localhost
+
+    - name: Confirm volume configuration saved
+      debug:
+        msg: "Volume configuration saved to migration-volumes-{{ ansible_date_time.epoch }}.txt"
+
+    - name: Pause for user confirmation
+      pause:
+        prompt: |
+          
+          ==========================================
+          VOLUME CONFIGURATION DISCOVERED
+          ==========================================
+          
+          New Instance Root: /dev/xvda (AL2023 - created by Terraform)
+          
+          Old Gateway Volumes: {{ old_volumes.volumes | length }} disk(s) - ALL will be migrated
+          {% for vol in old_volumes.volumes %}
+            - {{ vol.id }} ({{ vol.size }} GB) → /dev/sd{{ 'fghijklmn'[loop.index0] }}
+          {% endfor %}
+          
+          MIGRATION PROCESS:
+          1. Stop old instance: {{ old_instance_id }}
+          2. Detach ALL volumes from old instance
+          3. Attach ALL volumes to new instance: {{ new_instance_id }}
+             at /dev/sdf, /dev/sdg, /dev/sdh, etc.
+          4. Start new instance (AL2023 root + ALL old volumes)
+          5. Trigger migration via API
+          6. Migration complete!
+          
+          Press ENTER to continue or Ctrl+C to abort...
+
+  
+    ############################################################################
+    # Step 3: Stop Old Gateway Instance
+    ############################################################################
+
+    - name: Check old instance state
+      amazon.aws.ec2_instance_info:
+        instance_ids:
+          - "{{ old_instance_id }}"
+        region: "{{ aws_region }}"
+      register: old_instance_info
+
+    - name: Display old instance state
+      debug:
+        msg: "Old instance state: {{ old_instance_info.instances[0].state.name }}"
+
+    - name: Stop old gateway instance
+      amazon.aws.ec2_instance:
+        instance_ids:
+          - "{{ old_instance_id }}"
+        state: stopped
+        region: "{{ aws_region }}"
+        wait: true
+        wait_timeout: 300
+      when: old_instance_info.instances[0].state.name != 'stopped'
+
+    - name: Confirm old instance is stopped
+      debug:
+        msg: "Old gateway instance {{ old_instance_id }} is now stopped"
+
+    ############################################################################
+    # Step 4: Detach All Volumes from Old Gateway Instance
+    ############################################################################
+
+    - name: Detach all volumes from old gateway instance
+      amazon.aws.ec2_vol:
+        id: "{{ item.id }}"
+        instance: ""
+        region: "{{ aws_region }}"
+        state: present
+      loop: "{{ old_volumes.volumes }}"
+      register: detach_result
+
+    - name: Wait for all volumes to be available
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          volume-id: "{{ item.id }}"
+      register: volume_status
+      until: volume_status.volumes | length > 0 and volume_status.volumes[0].status == 'available'
+      retries: 30
+      delay: 10
+      loop: "{{ old_volumes.volumes }}"
+
+    - name: Confirm all volumes detached
+      debug:
+        msg:
+          - "All volumes successfully detached from old instance"
+          - "Volume IDs: {{ old_volumes.volumes | map(attribute='id') | list }}"
+
+    ############################################################################
+    # Step 5: Attach All Volumes to New Gateway Instance
+    ############################################################################
+
+    - name: Check new instance state
+      amazon.aws.ec2_instance_info:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        region: "{{ aws_region }}"
+      register: new_instance_info
+
+    - name: Stop new instance before attaching volumes
+      amazon.aws.ec2_instance:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        state: stopped
+        region: "{{ aws_region }}"
+        wait: true
+        wait_timeout: 300
+      when: new_instance_info.instances[0].state.name != 'stopped'
+
+    - name: Confirm new instance is stopped
+      debug:
+        msg: "New instance {{ new_instance_id }} is stopped and ready for volume attachment"
+
+    - name: Display volume attachment plan
+      debug:
+        msg:
+          - "Attaching {{ old_volumes.volumes | length }} volume(s) to new instance {{ new_instance_id }}"
+          - "{% for vol in old_volumes.volumes %}  - {{ vol.id }} → /dev/sd{{ 'fghijklmn'[loop.index0] }}{% endfor %}"
+
+    - name: Attach all volumes to new instance at /dev/sdf, /dev/sdg, etc.
+      amazon.aws.ec2_vol:
+        id: "{{ item.id }}"
+        instance: "{{ new_instance_id }}"
+        device_name: "/dev/sd{{ 'fghijklmn'[ansible_loop.index0] }}"
+        region: "{{ aws_region }}"
+        state: present
+        delete_on_termination: false
+      loop: "{{ old_volumes.volumes }}"
+      loop_control:
+        extended: yes
+      register: attach_result
+      retries: 3
+      delay: 5
+      until: attach_result is succeeded
+
+    - name: Display attach results
+      debug:
+        var: attach_result
+
+    - name: Wait for all volumes to be attached
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          volume-id: "{{ item.id }}"
+      register: volume_status
+      until: volume_status.volumes | length > 0 and volume_status.volumes[0].attachment_set | length > 0 and volume_status.volumes[0].attachment_set[0].status == 'attached'
+      retries: 30
+      delay: 10
+      loop: "{{ old_volumes.volumes }}"
+      failed_when: false
+
+    - name: Check for any failed attachments
+      debug:
+        msg: "WARNING: Volume {{ item.item.id }} may not be properly attached. Status: {{ item.volumes[0].status if item.volumes | length > 0 else 'unknown' }}"
+      loop: "{{ volume_status.results }}"
+      when: item.volumes | length == 0 or item.volumes[0].attachment_set | length == 0
+
+    - name: Verify all volume attachments
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          attachment.instance-id: "{{ new_instance_id }}"
+      register: new_instance_volumes
+
+    - name: Display all attached volumes
+      debug:
+        msg:
+          - "All volumes successfully attached to new instance:"
+          - "  - AL2023 root: /dev/xvda"
+          - "{% for vol in old_volumes.volumes %}  - Old volume {{ loop.index }}: /dev/sd{{ 'fghijklmn'[loop.index0] }} ({{ vol.id }}, {{ vol.size }} GB){% endfor %}"
+
+    ############################################################################
+    # Step 7: Start New Gateway Instance
+    ############################################################################
+
+    - name: Start new gateway instance
+      amazon.aws.ec2_instance:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        state: running
+        region: "{{ aws_region }}"
+        wait: true
+        wait_timeout: 300
+      register: new_instance_start
+
+    - name: Wait for new instance to be fully running
+      amazon.aws.ec2_instance_info:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        region: "{{ aws_region }}"
+      register: new_instance_info
+      until: new_instance_info.instances[0].state.name == 'running'
+      retries: 30
+      delay: 10
+
+    - name: Wait for instance status checks to pass
+      amazon.aws.ec2_instance_info:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        region: "{{ aws_region }}"
+      register: instance_status
+      until: >
+        instance_status.instances[0].state.name == 'running' and
+        instance_status.instances[0].status_checks is defined and
+        instance_status.instances[0].status_checks.instance_status == 'ok' and
+        instance_status.instances[0].status_checks.system_status == 'ok'
+      retries: 10
+      delay: 15
+      failed_when: false
+
+    - name: Display instance status
+      debug:
+        msg:
+          - "Instance State: {{ instance_status.instances[0].state.name }}"
+          - "Instance Status Check: {{ instance_status.instances[0].status_checks.instance_status | default('initializing') }}"
+          - "System Status Check: {{ instance_status.instances[0].status_checks.system_status | default('initializing') }}"
+
+    - name: Confirm new instance is running
+      debug:
+        msg: "New gateway instance {{ new_instance_id }} is now running with all status checks passed"
+
+
+    ############################################################################
+    # Step 9: Trigger Migration via URL
+    ############################################################################
+
+    - name: Initiate gateway migration using curl
+      shell: |
+        curl -L -s -o /tmp/migration_response.html -w "%{http_code}" \
+          --connect-timeout 30 \
+          --max-time {{ migration_timeout }} \
+          "http://{{ new_gateway_ip }}/migrate?gatewayId={{ gateway_id }}"
+      register: migration_result
+      retries: 5
+      delay: 60
+      until: migration_result.stdout in ['200', '302']
+      changed_when: migration_result.stdout in ['200', '302']
+      failed_when: migration_result.stdout not in ['200', '302']
+
+    - name: Display migration result
+      debug:
+        msg:
+          - "Migration initiated successfully"
+          - "HTTP Status Code: {{ migration_result.stdout }}"
+          - "Response saved to: /tmp/migration_response.html"
+
+    - name: Show migration response content
+      shell: cat /tmp/migration_response.html
+      register: migration_response_content
+      changed_when: false
+      failed_when: false
+
+    - name: Display migration response
+      debug:
+        msg: "{{ migration_response_content.stdout }}"
+      when: migration_response_content.stdout is defined
+
+    - name: Wait for migration to complete (check gateway status)
+      pause:
+        minutes: 5
+        prompt: "Waiting 5 minutes for migration to complete. Check AWS Console for gateway status."
+
+    ############################################################################
+    # Step 10: Confirm Migration Complete
+    ############################################################################
+
+    - name: Confirm migration complete
+      debug:
+        msg:
+          - "=========================================="
+          - "Migration Complete!"
+          - "=========================================="
+          - "New Instance: {{ new_instance_id }}"
+          - "Gateway ID: {{ gateway_id }}"
+          - "Gateway IP: {{ new_gateway_ip }}"
+          - ""
+          - "Volume Configuration:"
+          - "  - New AL2023 root disk: /dev/xvda (created by Terraform)"
+          - "  - Old gateway volumes: {{ old_volumes.volumes | length }} disk(s)"
+          - "{% for vol in old_volumes.volumes %}    • {{ vol.id }} at /dev/sd{{ 'fghijklmn'[loop.index0] }}{% endfor %}"
+          - ""
+          - "Next Steps:"
+          - "1. Verify gateway status in AWS Console (should show 'Running')"
+          - "2. If using Active Directory, re-join the domain"
+          - "3. If using SMB Guest Access, re-enter the password"
+          - "4. Test file share access from clients"
+          - "5. Once verified, you can terminate old instance: {{ old_instance_id }}"
+          - "=========================================="

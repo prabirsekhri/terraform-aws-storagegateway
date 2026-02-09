@@ -59,21 +59,25 @@ resource "aws_instance" "ec2_sgw" {
 }
 
 resource "aws_eip" "ip" {
+  count  = var.create_eip ? 1 : 0
   domain = "vpc"
 }
 
 resource "aws_eip_association" "eip_assoc" {
+  count         = var.create_eip ? 1 : 0
   instance_id   = aws_instance.ec2_sgw.id
-  allocation_id = aws_eip.ip.id
+  allocation_id = aws_eip.ip[0].id
 }
 
 resource "aws_volume_attachment" "ebs_volume" {
+  count       = var.create_cache_volume ? 1 : 0
   device_name = "/dev/sdb"
-  volume_id   = aws_ebs_volume.cache_disk.id
+  volume_id   = aws_ebs_volume.cache_disk[0].id
   instance_id = aws_instance.ec2_sgw.id
 }
 
 resource "aws_ebs_volume" "cache_disk" {
+  count             = var.create_cache_volume ? 1 : 0
   availability_zone = aws_instance.ec2_sgw.availability_zone
   encrypted         = true
   size              = try(tonumber(var.cache_block_device["disk_size"]), 150)

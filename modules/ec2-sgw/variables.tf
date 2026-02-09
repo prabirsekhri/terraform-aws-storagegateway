@@ -127,3 +127,15 @@ variable "cache_block_device" {
     error_message = "The cache_block_device volume_type must be one of: gp2, gp3, io1, io2, st1, sc1."
   }
 }
+
+variable "create_cache_volume" {
+  type        = bool
+  description = "Create a new cache EBS volume. Set to false for migration scenarios."
+  default     = false
+}
+
+variable "create_eip" {
+  type        = bool
+  description = "Create and associate an Elastic IP. Set to false for migration scenarios."
+  default     = false
+}

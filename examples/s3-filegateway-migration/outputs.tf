@@ -29,7 +29,7 @@ output "new_gateway_private_ip" {
 
 output "new_gateway_public_ip" {
   description = "The public IP address of the new Storage Gateway"
-  value       = module.new_sgw.public_ip
+  value       = module.new_sgw.instance_public_ip
   sensitive   = true
 }
 
@@ -50,7 +50,7 @@ output "aws_region" {
 
 output "migration_url" {
   description = "URL to initiate the gateway migration process"
-  value       = "http://${module.new_sgw.private_ip}/migrate?gatewayId=${var.gateway_id}"
+  value       = "http://${module.new_sgw.instance_public_ip}/migrate?gatewayId=${var.gateway_id}"
 }
 
 output "next_steps" {

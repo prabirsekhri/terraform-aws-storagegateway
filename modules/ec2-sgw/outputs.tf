@@ -18,3 +18,8 @@ output "instance_id" {
   value       = aws_instance.ec2_sgw.id
   description = "The EC2 instance ID of the Storage Gateway"
 }
+
+output "instance_public_ip" {
+  value       = aws_instance.ec2_sgw.public_ip
+  description = "The public IP address assigned to the EC2 instance (not EIP)"
+}

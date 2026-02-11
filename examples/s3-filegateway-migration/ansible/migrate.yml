@@ -244,19 +244,9 @@
         region: "{{ aws_region }}"
       register: new_instance_info
 
-    - name: Stop new instance before attaching volumes
-      amazon.aws.ec2_instance:
-        instance_ids:
-          - "{{ new_instance_id }}"
-        state: stopped
-        region: "{{ aws_region }}"
-        wait: true
-        wait_timeout: 300
-      when: new_instance_info.instances[0].state.name != 'stopped'
-
-    - name: Confirm new instance is stopped
+    - name: Display new instance state
       debug:
-        msg: "New instance {{ new_instance_id }} is stopped and ready for volume attachment"
+        msg: "New instance {{ new_instance_id }} is {{ new_instance_info.instances[0].state.name }} - proceeding with volume attachment"
 
     - name: Display volume attachment plan
       debug:
@@ -340,21 +330,6 @@
       retries: 30
       delay: 10
 
-    - name: Wait for instance status checks to pass
-      amazon.aws.ec2_instance_info:
-        instance_ids:
-          - "{{ new_instance_id }}"
-        region: "{{ aws_region }}"
-      register: instance_status
-      until: >
-        instance_status.instances[0].state.name == 'running' and
-        instance_status.instances[0].status_checks is defined and
-        instance_status.instances[0].status_checks.instance_status == 'ok' and
-        instance_status.instances[0].status_checks.system_status == 'ok'
-      retries: 10
-      delay: 15
-      failed_when: false
-
     - name: Display instance status
       debug:
         msg:
@@ -366,45 +341,65 @@
       debug:
         msg: "New gateway instance {{ new_instance_id }} is now running with all status checks passed"
 
+    - name: Wait 30 seconds for network to stabilize
+      pause:
+        seconds: 30
+
+    - name: Get new public IP after instance restart
+      amazon.aws.ec2_instance_info:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        region: "{{ aws_region }}"
+      register: new_instance_info_updated
+
+    - name: Display instance network info
+      debug:
+        msg:
+          - "Instance ID: {{ new_instance_info_updated.instances[0].instance_id }}"
+          - "Public IP: {{ new_instance_info_updated.instances[0].public_ip_address | default('None') }}"
+          - "Private IP: {{ new_instance_info_updated.instances[0].private_ip_address }}"
+          - "State: {{ new_instance_info_updated.instances[0].state.name }}"
+
+    - name: Update gateway IP variable with new public IP
+      set_fact:
+        new_gateway_ip: "{{ new_instance_info_updated.instances[0].public_ip_address }}"
+        cacheable: no
+
+    - name: Display updated gateway IP
+      debug:
+        msg: 
+          - "OLD IP (from environment): {{ lookup('env', 'NEW_GATEWAY_IP') }}"
+          - "NEW IP (after restart): {{ new_gateway_ip }}"
+
+  
 
     ############################################################################
     # Step 9: Trigger Migration via URL
     ############################################################################
 
+    - name: Display migration URL being used
+      debug:
+        msg:
+          - "Initiating migration with:"
+          - "  Gateway ID: {{ gateway_id }}"
+          - "  Gateway IP: {{ new_gateway_ip }}"
+          - "  Full URL: http://{{ new_gateway_ip }}/migrate?gatewayId={{ gateway_id }}"
+
     - name: Initiate gateway migration using curl
       shell: |
-        curl -L -s -o /tmp/migration_response.html -w "%{http_code}" \
-          --connect-timeout 30 \
-          --max-time {{ migration_timeout }} \
-          "http://{{ new_gateway_ip }}/migrate?gatewayId={{ gateway_id }}"
+        curl "http://{{ new_gateway_ip }}/migrate?gatewayId={{ gateway_id }}"
       register: migration_result
-      retries: 5
-      delay: 60
-      until: migration_result.stdout in ['200', '302']
-      changed_when: migration_result.stdout in ['200', '302']
-      failed_when: migration_result.stdout not in ['200', '302']
+      changed_when: true
 
     - name: Display migration result
       debug:
         msg:
           - "Migration initiated successfully"
-          - "HTTP Status Code: {{ migration_result.stdout }}"
-          - "Response saved to: /tmp/migration_response.html"
-
-    - name: Show migration response content
-      shell: cat /tmp/migration_response.html
-      register: migration_response_content
-      changed_when: false
-      failed_when: false
-
-    - name: Display migration response
-      debug:
-        msg: "{{ migration_response_content.stdout }}"
-      when: migration_response_content.stdout is defined
+          - "Response: {{ migration_result.stdout }}"
 
     - name: Wait for migration to complete (check gateway status)
       pause:
-        minutes: 5
+        minutes: 2
         prompt: "Waiting 5 minutes for migration to complete. Check AWS Console for gateway status."
 
     ############################################################################

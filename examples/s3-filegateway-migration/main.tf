@@ -37,6 +37,16 @@ locals {
 
   # Extract VPC ID from the subnet
   vpc_id = data.aws_subnet.old_sgw_subnet.vpc_id
+
+  # Extract root disk configuration from old instance (convert set to list)
+  old_root_disk = tolist(data.aws_instance.old_sgw.root_block_device)[0]
+  
+  # Build root_block_device config matching old instance
+  root_block_device = {
+    disk_size   = try(var.root_block_device.disk_size, local.old_root_disk.volume_size)
+    volume_type = try(var.root_block_device.volume_type, local.old_root_disk.volume_type)
+    kms_key_id  = try(var.root_block_device.kms_key_id, local.old_root_disk.kms_key_id != "" ? local.old_root_disk.kms_key_id : null)
+  }
 }
 
 data "aws_ebs_volumes" "cache_volumes" {
@@ -74,7 +84,7 @@ module "new_sgw" {
   create_security_group = false
   security_group_id     = tolist(data.aws_instance.old_sgw.vpc_security_group_ids)[0]
 
-  # Preserve root block device settings
-  root_block_device = var.root_block_device
+  # Preserve root block device settings from old instance
+  root_block_device = local.root_block_device
 }
 

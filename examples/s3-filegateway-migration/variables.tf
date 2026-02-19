@@ -38,13 +38,9 @@ variable "reuse_eip" {
 }
 
 variable "root_block_device" {
-  description = "Customize details about the root block device of the instance"
+  description = "Root block device configuration of the new instance will match the old gateway's root disk configuration."
   type        = map(any)
-  default = {
-    kms_key_id  = null
-    disk_size   = 80
-    volume_type = "gp3"
-  }
+  default     = {}
   validation {
     condition     = try(tonumber(var.root_block_device["disk_size"]), 80) >= 80
     error_message = "The root_block_device disk_size must be at least 80 GB per AWS Storage Gateway requirements."

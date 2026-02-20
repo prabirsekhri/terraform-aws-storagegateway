@@ -250,14 +250,26 @@
           - "  - Snapshot: {{ root_disk.snapshot_id }}"
           - "  - Original Device: {{ root_disk.attachment_set[0].device }}"
           - ""
-          - "CACHE DISK (additional storage):"
-          - "  - Volume ID: {{ cache_disk.id }}"
-          - "  - Size: {{ cache_disk.size }} GB"
-          - "  - Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}"
-          - "  - Original Device: {{ cache_disk.attachment_set[0].device }}"
+          - "CACHE DISKS ({{ cache_disks | length }} disk(s)):"
+
+    - name: Display each cache disk
+      debug:
+        msg:
+          - "  Cache Disk {{ ansible_loop.index }}:"
+          - "    - Volume ID: {{ item.id }}"
+          - "    - Size: {{ item.size }} GB"
+          - "    - Snapshot: {{ item.snapshot_id | default('None - blank disk') }}"
+          - "    - Original Device: {{ item.attachment_set[0].device }}"
+      loop: "{{ cache_disks }}"
+      loop_control:
+        extended: true
+
+    - name: Display migration notes
+      debug:
+        msg:
           - ""
           - "NOTE: New instance has its own AL2023 root disk at /dev/xvda"
-          - "      Both old volumes will be attached as additional disks"
+          - "      All old volumes will be attached as additional disks"
           - "=========================================="
 
     - name: Save volume configuration to file
@@ -279,17 +291,20 @@
             Original Device: {{ root_disk.attachment_set[0].device }}
             New Device: /dev/sdf
           
-          OLD GATEWAY CACHE DISK:
+          OLD GATEWAY CACHE DISKS:
+          {% for cache_disk in cache_disks %}
+          Cache Disk {{ loop.index }}:
             Volume ID: {{ cache_disk.id }}
             Size: {{ cache_disk.size }} GB
             Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}
             Original Device: {{ cache_disk.attachment_set[0].device }}
-            New Device: /dev/sdg
+            New Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}
+          {% endfor %}
           
           MIGRATION NOTES:
           - Root disk contains the old gateway OS and configuration
-          - Cache disk contains cached data for the gateway
-          - Both disks will be attached to the new AL2023 instance
+          - Cache disks contain cached data for the gateway
+          - All disks will be attached to the new AL2023 instance
           - Device names from old instance are NOT preserved
           - New instance boots from its own AL2023 root at /dev/xvda
         dest: "./migration-volumes-{{ ansible_date_time.epoch }}.txt"
@@ -298,6 +313,17 @@
     - name: Confirm volume configuration saved
       debug:
         msg: "Volume configuration saved to migration-volumes-{{ ansible_date_time.epoch }}.txt"
+
+    - name: Display cache disk configuration for confirmation
+      debug:
+        msg:
+          - "Cache Disk {{ ansible_loop.index }}:"
+          - "  {{ item.id }} ({{ item.size }} GB) → /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }}"
+          - "  Original: {{ item.attachment_set[0].device }}"
+          - "  Snapshot: {{ item.snapshot_id | default('None - blank disk') }}"
+      loop: "{{ cache_disks }}"
+      loop_control:
+        extended: true
 
     - name: Pause for user confirmation
       pause:
@@ -314,15 +340,13 @@
             Original: {{ root_disk.attachment_set[0].device }}
             Snapshot: {{ root_disk.snapshot_id }}
           
-          OLD GATEWAY CACHE DISK:
-            {{ cache_disk.id }} ({{ cache_disk.size }} GB) → /dev/sdg
-            Original: {{ cache_disk.attachment_set[0].device }}
-            Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}
+          OLD GATEWAY CACHE DISKS: {{ cache_disks | length }} disk(s)
+          (See cache disk details above)
           
           MIGRATION PROCESS:
           1. Stop old instance: {{ old_instance_id }}
-          2. Detach both volumes from old instance
-          3. Attach both volumes to running new instance: {{ new_instance_id }}
+          2. Detach all volumes from old instance
+          3. Attach all volumes to running new instance: {{ new_instance_id }}
           4. Trigger migration via API
           5. Migration complete!
           
@@ -419,9 +443,14 @@
         msg:
           - "Attaching {{ old_volumes.volumes | length }} volume(s) to running instance {{ new_instance_id }}"
           - "  ROOT DISK: {{ root_disk.id }} → /dev/sdf"
-          - "{% for cache_disk in cache_disks %}"
-          - "  CACHE DISK {{ loop.index }}: {{ cache_disk.id }} → /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}"
-          - "{% endfor %}"
+          - "  CACHE DISKS: {{ cache_disks | length }} disk(s) → /dev/sdg+"
+
+    - name: Display cache disk attachment plan
+      debug:
+        msg: "  CACHE DISK {{ ansible_loop.index }}: {{ item.id }} → /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }}"
+      loop: "{{ cache_disks }}"
+      loop_control:
+        extended: true
 
     - name: Attach root disk to new instance at /dev/sdf
       amazon.aws.ec2_vol:
@@ -469,9 +498,13 @@
         msg:
           - "ROOT DISK attachment: {{ 'SUCCESS' if attach_root_result is succeeded else 'FAILED' }}"
           - "CACHE DISKS processed: {{ attach_cache_results.results | length if attach_cache_results.results is defined else 0 }}"
-          - "{% for result in attach_cache_results.results | default([]) %}"
-          - "  Cache disk {{ loop.index }}: {{ 'SUCCESS' if result is succeeded else 'FAILED' }}"
-          - "{% endfor %}"
+
+    - name: Display individual cache disk results
+      debug:
+        msg: "  Cache disk {{ ansible_loop.index }}: {{ 'SUCCESS' if item is succeeded else 'FAILED' }}"
+      loop: "{{ attach_cache_results.results | default([]) }}"
+      loop_control:
+        extended: true
 
     - name: Debug cache disks variable
       debug:
@@ -546,9 +579,14 @@
           - "All volumes successfully attached to running instance:"
           - "  - AL2023 root: /dev/xvda (new instance boot disk)"
           - "  - Old gateway root: /dev/sdf ({{ root_disk.id }}, {{ root_disk.size }} GB)"
-          - "{% for cache_disk in cache_disks %}"
-          - "  - Cache disk {{ loop.index }}: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }} ({{ cache_disk.id }}, {{ cache_disk.size }} GB)"
-          - "{% endfor %}"
+          - "  - Cache disks: {{ cache_disks | length }} disk(s) at /dev/sdg+"
+
+    - name: Display individual attached cache disks
+      debug:
+        msg: "  - Cache disk {{ ansible_loop.index }}: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }} ({{ item.id }}, {{ item.size }} GB)"
+      loop: "{{ cache_disks }}"
+      loop_control:
+        extended: true
 
     - name: Wait 30 seconds for volumes to be recognized by OS
       pause:
@@ -610,11 +648,19 @@
           - "Migration API Response:"
           - "{{ migration_result.stdout }}"
 
-    - name: Check if migration completed successfully
+    - name: Debug migration response
+      debug:
+        msg:
+          - "Raw migration response: '{{ migration_result.stdout }}'"
+          - "Contains 'Successfully migrated Storage Gateway': {{ 'Successfully migrated Storage Gateway' in migration_result.stdout }}"
+          - "Contains 'Success' title: {{ 'Success' in migration_result.stdout }}"
+
+    - name: Check if migration completed successfully (correct detection)
       set_fact:
-        migration_successful: "{{ 'Migration completed successfully' in migration_result.stdout }}"
+        migration_successful: "{{ 'Successfully migrated Storage Gateway' in migration_result.stdout }}"
         migration_failed: "{{ 'Expected' in migration_result.stdout and 'cache disks attached but found' in migration_result.stdout }}"
         migration_error: "{{ 'Invalid Request' in migration_result.stdout or 'Error' in migration_result.stdout }}"
+        should_detach_old_root: "{{ 'Successfully migrated Storage Gateway' in migration_result.stdout }}"
 
     - name: Display migration status
       debug:
@@ -623,19 +669,34 @@
           - "Migration Status: {{ 'COMPLETED SUCCESSFULLY' if migration_successful else ('FAILED - CACHE DISK MISMATCH' if migration_failed else ('ERROR' if migration_error else 'UNKNOWN')) }}"
           - "=========================================="
           - "API Response: {{ migration_result.stdout }}"
-          - ""
-          - "{% if migration_successful %}"
+
+    - name: Display migration success actions
+      debug:
+        msg:
           - "✓ PROCEEDING TO AUTOMATIC OLD ROOT DISK DETACHMENT..."
-          - "{% elif migration_failed %}"
+      when: migration_successful
+
+    - name: Display migration failure - cache disk mismatch
+      debug:
+        msg:
           - "✗ MIGRATION FAILED: Cache disk count mismatch detected"
           - "✗ This indicates not all cache volumes were properly attached"
           - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
-          - "{% elif migration_error %}"
+      when: migration_failed
+
+    - name: Display migration error
+      debug:
+        msg:
           - "✗ MIGRATION ERROR: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
           - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
-          - "{% else %}"
+      when: migration_error and not migration_failed
+
+    - name: Display unknown response
+      debug:
+        msg:
           - "? UNKNOWN RESPONSE - SKIPPING OLD ROOT DISK DETACHMENT for safety"
-          - "{% endif %}"
+          - "Response: {{ migration_result.stdout }}"
+      when: not migration_successful and not migration_failed and not migration_error
 
     ############################################################################
     # Step 10: Confirm Migration Complete
@@ -654,9 +715,7 @@
           - "Volume Configuration:"
           - "  - New AL2023 root disk: /dev/xvda (created by Terraform)"
           - "  - Old gateway root disk: /dev/sdf ({{ root_disk.id }}, {{ root_disk.size }} GB)"
-          - "{% for cache_disk in cache_disks %}"
-          - "  - Cache disk {{ loop.index }}: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }} ({{ cache_disk.id }}, {{ cache_disk.size }} GB)"
-          - "{% endfor %}"
+          - "  - Cache disks: {{ cache_disks | length }} disk(s) at /dev/sdg+"
           - ""
           - "Disk Details:"
           - "  ROOT DISK (contains old gateway OS & config):"
@@ -665,17 +724,23 @@
           - "    - Snapshot: {{ root_disk.snapshot_id }}"
           - "    - Device: /dev/sdf"
           - ""
-          - "  CACHE DISKS (contain cached data):"
-          - "{% for cache_disk in cache_disks %}"
-          - "    Cache Disk {{ loop.index }}:"
-          - "      - Volume: {{ cache_disk.id }}"
-          - "      - Size: {{ cache_disk.size }} GB"
-          - "      - Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}"
-          - "      - Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}"
-          - "{% endfor %}"
+          - "  CACHE DISKS (contain cached data): {{ cache_disks | length }} disk(s)"
           - ""
           - "{{ 'PROCEEDING TO AUTOMATIC OLD ROOT DISK DETACHMENT...' if migration_successful else 'MIGRATION INCOMPLETE - SKIPPING OLD ROOT DISK DETACHMENT' }}"
           - "=========================================="
+      when: migration_successful or not migration_successful
+
+    - name: Display individual cache disk details
+      debug:
+        msg:
+          - "    Cache Disk {{ ansible_loop.index }}:"
+          - "      - Volume: {{ item.id }}"
+          - "      - Size: {{ item.size }} GB"
+          - "      - Snapshot: {{ item.snapshot_id | default('None - blank disk') }}"
+          - "      - Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }}"
+      loop: "{{ cache_disks }}"
+      loop_control:
+        extended: true
       when: migration_successful or not migration_successful
 
     - name: Handle migration failure - cache disk mismatch
@@ -717,26 +782,6 @@
           - "OLD ROOT DISK DETACHMENT SKIPPED FOR SAFETY"
           - "=========================================="
       when: migration_error | default(false) and not migration_failed | default(false)
-          - "    - Snapshot: {{ root_disk.snapshot_id }}"
-          - "    - Device: /dev/sdf"
-          - ""
-          - "  CACHE DISKS (contain cached data):"
-          - "{% for cache_disk in cache_disks %}"
-          - "    Cache Disk {{ loop.index }}:"
-          - "      - Volume: {{ cache_disk.id }}"
-          - "      - Size: {{ cache_disk.size }} GB"
-          - "      - Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}"
-          - "      - Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}"
-          - "{% endfor %}"
-          - ""
-          - "Next Steps:"
-          - "1. Verify gateway status in AWS Console (should show 'Running')"
-          - "2. If using Active Directory, re-join the domain"
-          - "3. If using SMB Guest Access, re-enter the password"
-          - "4. Test file share access from clients"
-          - "5. Once verified, you can terminate old instance: {{ old_instance_id }}"
-          - "6. OPTIONAL: Run with -e detach_old_root=true to detach old root volume"
-          - "=========================================="
 
     ############################################################################
     # Step 11: Automatic Old Root Volume Detachment (when migration successful)
@@ -781,7 +826,7 @@
           Current Configuration:
             - New AL2023 root: /dev/xvda ({{ new_instance_id }})
             - Old root volume: /dev/sdf ({{ root_disk.id }})
-            - Cache volume: /dev/sdg ({{ cache_disk.id }})
+            - Cache volumes: {{ cache_disks | length }} disk(s) at /dev/sdg+
           
           IMPORTANT WARNINGS:
           1. This will STOP the new gateway instance temporarily
@@ -873,11 +918,13 @@
 
     - name: Show final attached volumes
       debug:
-        msg:
-          - "Final volume configuration for {{ new_instance_id }}:"
-          - "{% for vol in final_volumes.volumes %}"
-          - "  - {{ vol.id }}: {{ vol.size }}GB at {{ vol.attachment_set[0].device }} ({{ vol.attachment_set[0].state }})"
-          - "{% endfor %}"
+        msg: "Final volume configuration for {{ new_instance_id }}:"
+      when: should_detach_old_root
+
+    - name: Display each final attached volume
+      debug:
+        msg: "  - {{ item.id }}: {{ item.size }}GB at {{ item.attachment_set[0].device }} ({{ item.attachment_set[0].state }})"
+      loop: "{{ final_volumes.volumes | default([]) }}"
       when: should_detach_old_root
 
     - name: Confirm old root volume detachment complete

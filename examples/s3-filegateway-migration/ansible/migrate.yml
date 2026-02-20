@@ -82,6 +82,104 @@
           - "Region: {{ aws_region }}"
 
     ############################################################################
+    # Step 1.5: Check Cache Dirty Percentage
+    ############################################################################
+
+    - name: Get cache dirty percentage metric from CloudWatch
+      command: >
+        aws cloudwatch get-metric-statistics
+        --namespace AWS/StorageGateway
+        --metric-name CachePercentDirty
+        --dimensions Name=GatewayId,Value={{ gateway_id }}
+        --start-time {{ lookup('pipe', 'date -u -v-10M +%Y-%m-%dT%H:%M:%S') }}
+        --end-time {{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%S') }}
+        --period 300
+        --statistics Average
+        --region {{ aws_region }}
+        --output json
+      register: cache_dirty_metric
+      changed_when: false
+      failed_when: false
+
+    - name: Parse cache dirty metric
+      set_fact:
+        cache_dirty_data: "{{ cache_dirty_metric.stdout | from_json }}"
+      when: cache_dirty_metric.rc == 0
+
+    - name: Extract latest cache dirty percentage
+      set_fact:
+        cache_dirty_percent: "{{ cache_dirty_data.Datapoints | sort(attribute='Timestamp') | last | default({'Average': 0}) }}"
+      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
+
+    - name: Display cache dirty percentage
+      debug:
+        msg:
+          - "=========================================="
+          - "Cache Dirty Check"
+          - "=========================================="
+          - "Current Cache Dirty: {{ cache_dirty_percent.Average | default('N/A') }}%"
+          - "Timestamp: {{ cache_dirty_percent.Timestamp | default('N/A') }}"
+          - ""
+          - "AWS BEST PRACTICE: Cache dirty should typically remain low"
+          - "Cache dirty = content not yet uploaded to S3"
+          - ""
+          - "RECOMMENDATION:"
+          - "  • 0% = Safe to proceed (all data uploaded to S3)"
+          - "  • 1-5% = Low risk, but consider waiting"
+          - "  • >5% = High risk - wait for cache to flush to S3"
+          - "=========================================="
+      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
+
+    - name: Warn if cache dirty metric unavailable
+      debug:
+        msg:
+          - "WARNING: Unable to retrieve cache dirty metric"
+          - "This may be normal if the gateway is new or has no recent activity"
+          - "Proceeding with migration..."
+      when: cache_dirty_metric.rc != 0 or (cache_dirty_data.Datapoints | default([]) | length == 0)
+
+    - name: Pause if cache dirty percentage is high
+      pause:
+        prompt: |
+          
+          ==========================================
+          WARNING: Cache Dirty Percentage Check
+          ==========================================
+          
+          Current Cache Dirty: {{ cache_dirty_percent.Average | default('N/A') }}%
+          
+          {% if cache_dirty_percent.Average | default(0) | float > 5 %}
+          ⚠️  HIGH RISK: Cache dirty is above 5%
+          
+          This means {{ cache_dirty_percent.Average | float | round(1) }}% of cached data has NOT been uploaded to S3.
+          Proceeding with migration now may result in DATA LOSS.
+          
+          STRONGLY RECOMMENDED:
+          1. Press Ctrl+C to abort
+          2. Wait for cache to flush (monitor CachePercentDirty in CloudWatch)
+          3. Re-run migration when cache dirty is 0%
+          
+          Or press ENTER to continue anyway (NOT RECOMMENDED - DATA LOSS RISK)
+          
+          {% elif cache_dirty_percent.Average | default(0) | float > 0 %}
+          ⚠️  LOW RISK: Cache dirty is {{ cache_dirty_percent.Average | float | round(1) }}%
+          
+          A small amount of data has not been uploaded to S3 yet.
+          
+          RECOMMENDED:
+          1. Press Ctrl+C to abort and wait a few minutes
+          2. Re-run migration when cache dirty is 0%
+          
+          Or press ENTER to continue (low risk but not ideal)
+          
+          {% else %}
+          ✓ Cache is clean (0% dirty) - safe to proceed with migration
+          
+          Press ENTER to continue...
+          {% endif %}
+      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
+
+    ############################################################################
     # Step 2: Discover all volumes attached to the existing gateway instance
     ############################################################################
 
@@ -99,6 +197,45 @@
         fail_msg: "No volumes found attached to instance {{ old_instance_id }}"
         success_msg: "Found {{ old_volumes.volumes | length }} volume(s) to migrate"
 
+    - name: Separate root disk and cache disks
+      set_fact:
+        # Root disk: has a non-empty snapshot_id (created from AMI)
+        root_disk: "{{ old_volumes.volumes | selectattr('snapshot_id', 'defined') | selectattr('snapshot_id', '!=', '') | list | first | default({}) }}"
+        # Cache disks: either no snapshot_id defined OR empty snapshot_id
+        cache_disks_no_snapshot: "{{ old_volumes.volumes | rejectattr('snapshot_id', 'defined') | list }}"
+        cache_disks_empty_snapshot: "{{ old_volumes.volumes | selectattr('snapshot_id', 'defined') | selectattr('snapshot_id', '==', '') | list }}"
+
+    - name: Combine all cache disks
+      set_fact:
+        cache_disks: "{{ cache_disks_no_snapshot + cache_disks_empty_snapshot }}"
+
+    - name: Debug volume classification
+      debug:
+        msg:
+          - "=== VOLUME CLASSIFICATION DEBUG ==="
+          - "Total volumes found: {{ old_volumes.volumes | length }}"
+          - "Root disk candidates (with snapshot): {{ old_volumes.volumes | selectattr('snapshot_id', 'defined') | selectattr('snapshot_id', '!=', '') | list | length }}"
+          - "Cache disks without snapshot_id: {{ cache_disks_no_snapshot | length }}"
+          - "Cache disks with empty snapshot_id: {{ cache_disks_empty_snapshot | length }}"
+          - "Total cache disks identified: {{ cache_disks | length }}"
+          - ""
+          - "Root disk: {{ root_disk.id | default('NOT FOUND') }}"
+          - "Cache disk IDs: {{ cache_disks | map(attribute='id') | list }}"
+
+    - name: Validate disk separation
+      assert:
+        that:
+          - root_disk.keys() | length > 0
+          - cache_disks | length > 0
+          - (cache_disks | length + 1) == old_volumes.volumes | length
+        fail_msg: |
+          Disk separation failed:
+          - Root disk found: {{ root_disk.keys() | length > 0 }}
+          - Cache disks found: {{ cache_disks | length }}
+          - Total volumes: {{ old_volumes.volumes | length }}
+          - Expected: 1 root + {{ old_volumes.volumes | length - 1 }} cache disks
+        success_msg: "Successfully identified 1 root disk and {{ cache_disks | length }} cache disk(s) from {{ old_volumes.volumes | length }} total volumes"
+
     - name: Display discovered volume configuration
       debug:
         msg:
@@ -106,17 +243,21 @@
           - "Old Gateway Volume Configuration"
           - "=========================================="
           - "Total Volumes to Migrate: {{ old_volumes.volumes | length }}"
-          # - ""
-          # - "MIGRATION PROCESS:"
-          # - "  1. Detach ALL volumes from old instance: {{ old_instance_id }}"
-          # - "  2. Attach ALL volumes as new disks to new instance: {{ new_instance_id }}"
-          # - "     - Volumes will be attached at /dev/sdf, /dev/sdg, /dev/sdh, etc."
-          # - "  3. Start new instance (AL2023 root at /dev/xvda + ALL old volumes)"
-          # - "  4. Trigger migration via API"
-          # - "  5. Migration complete!"
-          # - ""
+          - ""
+          - "ROOT DISK (from AMI snapshot):"
+          - "  - Volume ID: {{ root_disk.id }}"
+          - "  - Size: {{ root_disk.size }} GB"
+          - "  - Snapshot: {{ root_disk.snapshot_id }}"
+          - "  - Original Device: {{ root_disk.attachment_set[0].device }}"
+          - ""
+          - "CACHE DISK (additional storage):"
+          - "  - Volume ID: {{ cache_disk.id }}"
+          - "  - Size: {{ cache_disk.size }} GB"
+          - "  - Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}"
+          - "  - Original Device: {{ cache_disk.attachment_set[0].device }}"
+          - ""
           - "NOTE: New instance has its own AL2023 root disk at /dev/xvda"
-          - "      ALL old gateway volumes (including old root) attached as additional disks"
+          - "      Both old volumes will be attached as additional disks"
           - "=========================================="
 
     - name: Save volume configuration to file
@@ -131,15 +272,26 @@
           New Instance Root (AL2023):
             Device: /dev/xvda (created by Terraform)
           
-          Old Gateway Volumes ({{ old_volumes.volumes | length }} total - ALL will be migrated):
-          {% for vol in old_volumes.volumes %}
-            - ID: {{ vol.id }}
-              New Device: /dev/sd{{ 'fghijklmn'[loop.index0] }}
-              Size: {{ vol.size }} GB
-          {% endfor %}
+          OLD GATEWAY ROOT DISK:
+            Volume ID: {{ root_disk.id }}
+            Size: {{ root_disk.size }} GB
+            Snapshot: {{ root_disk.snapshot_id }}
+            Original Device: {{ root_disk.attachment_set[0].device }}
+            New Device: /dev/sdf
           
-          NOTE: ALL old volumes (including old root) attached as NEW volumes to new instance
-                Device names from old instance are NOT preserved
+          OLD GATEWAY CACHE DISK:
+            Volume ID: {{ cache_disk.id }}
+            Size: {{ cache_disk.size }} GB
+            Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}
+            Original Device: {{ cache_disk.attachment_set[0].device }}
+            New Device: /dev/sdg
+          
+          MIGRATION NOTES:
+          - Root disk contains the old gateway OS and configuration
+          - Cache disk contains cached data for the gateway
+          - Both disks will be attached to the new AL2023 instance
+          - Device names from old instance are NOT preserved
+          - New instance boots from its own AL2023 root at /dev/xvda
         dest: "./migration-volumes-{{ ansible_date_time.epoch }}.txt"
       delegate_to: localhost
 
@@ -157,19 +309,22 @@
           
           New Instance Root: /dev/xvda (AL2023 - created by Terraform)
           
-          Old Gateway Volumes: {{ old_volumes.volumes | length }} disk(s) - ALL will be migrated
-          {% for vol in old_volumes.volumes %}
-            - {{ vol.id }} ({{ vol.size }} GB) → /dev/sd{{ 'fghijklmn'[loop.index0] }}
-          {% endfor %}
+          OLD GATEWAY ROOT DISK:
+            {{ root_disk.id }} ({{ root_disk.size }} GB) → /dev/sdf
+            Original: {{ root_disk.attachment_set[0].device }}
+            Snapshot: {{ root_disk.snapshot_id }}
+          
+          OLD GATEWAY CACHE DISK:
+            {{ cache_disk.id }} ({{ cache_disk.size }} GB) → /dev/sdg
+            Original: {{ cache_disk.attachment_set[0].device }}
+            Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}
           
           MIGRATION PROCESS:
           1. Stop old instance: {{ old_instance_id }}
-          2. Detach ALL volumes from old instance
-          3. Attach ALL volumes to new instance: {{ new_instance_id }}
-             at /dev/sdf, /dev/sdg, /dev/sdh, etc.
-          4. Start new instance (AL2023 root + ALL old volumes)
-          5. Trigger migration via API
-          6. Migration complete!
+          2. Detach both volumes from old instance
+          3. Attach both volumes to running new instance: {{ new_instance_id }}
+          4. Trigger migration via API
+          5. Migration complete!
           
           Press ENTER to continue or Ctrl+C to abort...
 
@@ -234,7 +389,7 @@
           - "Volume IDs: {{ old_volumes.volumes | map(attribute='id') | list }}"
 
     ############################################################################
-    # Step 5: Attach All Volumes to New Gateway Instance
+    # Step 5: Verify New Gateway Instance is Running
     ############################################################################
 
     - name: Check new instance state
@@ -246,51 +401,137 @@
 
     - name: Display new instance state
       debug:
-        msg: "New instance {{ new_instance_id }} is {{ new_instance_info.instances[0].state.name }} - proceeding with volume attachment"
+        msg: "New instance {{ new_instance_id }} is {{ new_instance_info.instances[0].state.name }}"
+
+    - name: Verify new instance is running
+      assert:
+        that:
+          - new_instance_info.instances[0].state.name == 'running'
+        fail_msg: "New instance {{ new_instance_id }} is not running. Current state: {{ new_instance_info.instances[0].state.name }}"
+        success_msg: "New instance {{ new_instance_id }} is running and ready for volume attachment"
+
+    ############################################################################
+    # Step 6: Attach All Volumes to Running Instance
+    ############################################################################
 
     - name: Display volume attachment plan
       debug:
         msg:
-          - "Attaching {{ old_volumes.volumes | length }} volume(s) to new instance {{ new_instance_id }}"
-          - "{% for vol in old_volumes.volumes %}  - {{ vol.id }} → /dev/sd{{ 'fghijklmn'[loop.index0] }}{% endfor %}"
+          - "Attaching {{ old_volumes.volumes | length }} volume(s) to running instance {{ new_instance_id }}"
+          - "  ROOT DISK: {{ root_disk.id }} → /dev/sdf"
+          - "{% for cache_disk in cache_disks %}"
+          - "  CACHE DISK {{ loop.index }}: {{ cache_disk.id }} → /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}"
+          - "{% endfor %}"
 
-    - name: Attach all volumes to new instance at /dev/sdf, /dev/sdg, etc.
+    - name: Attach root disk to new instance at /dev/sdf
       amazon.aws.ec2_vol:
-        id: "{{ item.id }}"
+        id: "{{ root_disk.id }}"
         instance: "{{ new_instance_id }}"
-        device_name: "/dev/sd{{ 'fghijklmn'[ansible_loop.index0] }}"
+        device_name: "/dev/sdf"
         region: "{{ aws_region }}"
         state: present
         delete_on_termination: false
-      loop: "{{ old_volumes.volumes }}"
-      loop_control:
-        extended: yes
-      register: attach_result
+      register: attach_root_result
       retries: 3
       delay: 5
-      until: attach_result is succeeded
+      until: attach_root_result is succeeded
+
+    - name: Attach cache disks to new instance
+      amazon.aws.ec2_vol:
+        id: "{{ item.id }}"
+        instance: "{{ new_instance_id }}"
+        device_name: "/dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }}"
+        region: "{{ aws_region }}"
+        state: present
+        delete_on_termination: false
+      register: attach_cache_results
+      retries: 5
+      delay: 10
+      until: attach_cache_results is succeeded
+      loop: "{{ cache_disks }}"
+      loop_control:
+        extended: true
+      failed_when: false
+
+    - name: Check for cache disk attachment failures
+      fail:
+        msg: |
+          CRITICAL: Failed to attach cache disk {{ item.item.id }}
+          Error: {{ item.msg | default('Unknown error') }}
+          This will prevent successful migration.
+      when: item is failed
+      loop: "{{ attach_cache_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.id | default('unknown') }}"
 
     - name: Display attach results
       debug:
-        var: attach_result
+        msg:
+          - "ROOT DISK attachment: {{ 'SUCCESS' if attach_root_result is succeeded else 'FAILED' }}"
+          - "CACHE DISKS processed: {{ attach_cache_results.results | length if attach_cache_results.results is defined else 0 }}"
+          - "{% for result in attach_cache_results.results | default([]) %}"
+          - "  Cache disk {{ loop.index }}: {{ 'SUCCESS' if result is succeeded else 'FAILED' }}"
+          - "{% endfor %}"
 
-    - name: Wait for all volumes to be attached
+    - name: Debug cache disks variable
+      debug:
+        msg:
+          - "Number of cache disks identified: {{ cache_disks | length }}"
+          - "Cache disk IDs: {{ cache_disks | map(attribute='id') | list }}"
+
+    - name: Wait for root disk to be attached
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          volume-id: "{{ root_disk.id }}"
+      register: root_volume_status
+      until: root_volume_status.volumes | length > 0 and root_volume_status.volumes[0].attachment_set | length > 0 and root_volume_status.volumes[0].attachment_set[0].status == 'attached'
+      retries: 30
+      delay: 10
+      failed_when: false
+
+    - name: Wait for cache disks to be attached
       amazon.aws.ec2_vol_info:
         region: "{{ aws_region }}"
         filters:
           volume-id: "{{ item.id }}"
-      register: volume_status
-      until: volume_status.volumes | length > 0 and volume_status.volumes[0].attachment_set | length > 0 and volume_status.volumes[0].attachment_set[0].status == 'attached'
+      register: cache_volume_statuses
+      until: cache_volume_statuses.volumes | length > 0 and cache_volume_statuses.volumes[0].attachment_set | length > 0 and cache_volume_statuses.volumes[0].attachment_set[0].status == 'attached'
       retries: 30
       delay: 10
-      loop: "{{ old_volumes.volumes }}"
       failed_when: false
+      loop: "{{ cache_disks }}"
+
+    - name: Validate all cache disks are attached
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          attachment.instance-id: "{{ new_instance_id }}"
+      register: attached_volumes
+
+    - name: Count attached cache disks
+      set_fact:
+        attached_cache_count: "{{ attached_volumes.volumes | rejectattr('attachment_set.0.device', 'equalto', '/dev/xvda') | rejectattr('attachment_set.0.device', 'equalto', '/dev/sdf') | list | length }}"
+        expected_cache_count: "{{ cache_disks | length }}"
+
+    - name: Verify cache disk attachment count
+      assert:
+        that:
+          - attached_cache_count | int == expected_cache_count | int
+        fail_msg: |
+          CRITICAL: Cache disk attachment mismatch!
+          Expected {{ expected_cache_count }} cache disks but found {{ attached_cache_count }} attached.
+          This will cause migration to fail with "Expected {{ expected_cache_count }} cache disks attached but found {{ attached_cache_count }}"
+          
+          Attached volumes: {{ attached_volumes.volumes | map(attribute='id') | list }}
+          Expected cache disks: {{ cache_disks | map(attribute='id') | list }}
+        success_msg: "✓ All {{ expected_cache_count }} cache disks successfully attached"
 
     - name: Check for any failed attachments
       debug:
-        msg: "WARNING: Volume {{ item.item.id }} may not be properly attached. Status: {{ item.volumes[0].status if item.volumes | length > 0 else 'unknown' }}"
-      loop: "{{ volume_status.results }}"
-      when: item.volumes | length == 0 or item.volumes[0].attachment_set | length == 0
+        msg: 
+          - "ROOT DISK Status: {{ 'ATTACHED' if root_volume_status.volumes | length > 0 and root_volume_status.volumes[0].attachment_set | length > 0 else 'FAILED' }}"
+          - "CACHE DISKS Status: {{ attached_cache_count }}/{{ expected_cache_count }} attached successfully"
 
     - name: Verify all volume attachments
       amazon.aws.ec2_vol_info:
@@ -302,50 +543,22 @@
     - name: Display all attached volumes
       debug:
         msg:
-          - "All volumes successfully attached to new instance:"
-          - "  - AL2023 root: /dev/xvda"
-          - "{% for vol in old_volumes.volumes %}  - Old volume {{ loop.index }}: /dev/sd{{ 'fghijklmn'[loop.index0] }} ({{ vol.id }}, {{ vol.size }} GB){% endfor %}"
+          - "All volumes successfully attached to running instance:"
+          - "  - AL2023 root: /dev/xvda (new instance boot disk)"
+          - "  - Old gateway root: /dev/sdf ({{ root_disk.id }}, {{ root_disk.size }} GB)"
+          - "{% for cache_disk in cache_disks %}"
+          - "  - Cache disk {{ loop.index }}: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }} ({{ cache_disk.id }}, {{ cache_disk.size }} GB)"
+          - "{% endfor %}"
 
-    ############################################################################
-    # Step 7: Start New Gateway Instance
-    ############################################################################
-
-    - name: Start new gateway instance
-      amazon.aws.ec2_instance:
-        instance_ids:
-          - "{{ new_instance_id }}"
-        state: running
-        region: "{{ aws_region }}"
-        wait: true
-        wait_timeout: 300
-      register: new_instance_start
-
-    - name: Wait for new instance to be fully running
-      amazon.aws.ec2_instance_info:
-        instance_ids:
-          - "{{ new_instance_id }}"
-        region: "{{ aws_region }}"
-      register: new_instance_info
-      until: new_instance_info.instances[0].state.name == 'running'
-      retries: 30
-      delay: 10
-
-    - name: Display instance status
-      debug:
-        msg:
-          - "Instance State: {{ instance_status.instances[0].state.name }}"
-          - "Instance Status Check: {{ instance_status.instances[0].status_checks.instance_status | default('initializing') }}"
-          - "System Status Check: {{ instance_status.instances[0].status_checks.system_status | default('initializing') }}"
-
-    - name: Confirm new instance is running
-      debug:
-        msg: "New gateway instance {{ new_instance_id }} is now running with all status checks passed"
-
-    - name: Wait 30 seconds for network to stabilize
+    - name: Wait 30 seconds for volumes to be recognized by OS
       pause:
         seconds: 30
 
-    - name: Get new public IP after instance restart
+    ############################################################################
+    # Step 7: Trigger Migration via URL
+    ############################################################################
+
+    - name: Get current instance network info
       amazon.aws.ec2_instance_info:
         instance_ids:
           - "{{ new_instance_id }}"
@@ -387,20 +600,42 @@
 
     - name: Initiate gateway migration using curl
       shell: |
-        curl "http://{{ new_gateway_ip }}/migrate?gatewayId={{ gateway_id }}"
+        curl -s "http://{{ new_gateway_ip }}/migrate?gatewayId={{ gateway_id }}"
       register: migration_result
       changed_when: true
 
     - name: Display migration result
       debug:
         msg:
-          - "Migration initiated successfully"
-          - "Response: {{ migration_result.stdout }}"
+          - "Migration API Response:"
+          - "{{ migration_result.stdout }}"
 
-    - name: Wait for migration to complete (check gateway status)
-      pause:
-        minutes: 2
-        prompt: "Waiting 5 minutes for migration to complete. Check AWS Console for gateway status."
+    - name: Check if migration completed successfully
+      set_fact:
+        migration_successful: "{{ 'Migration completed successfully' in migration_result.stdout }}"
+        migration_failed: "{{ 'Expected' in migration_result.stdout and 'cache disks attached but found' in migration_result.stdout }}"
+        migration_error: "{{ 'Invalid Request' in migration_result.stdout or 'Error' in migration_result.stdout }}"
+
+    - name: Display migration status
+      debug:
+        msg:
+          - "=========================================="
+          - "Migration Status: {{ 'COMPLETED SUCCESSFULLY' if migration_successful else ('FAILED - CACHE DISK MISMATCH' if migration_failed else ('ERROR' if migration_error else 'UNKNOWN')) }}"
+          - "=========================================="
+          - "API Response: {{ migration_result.stdout }}"
+          - ""
+          - "{% if migration_successful %}"
+          - "✓ PROCEEDING TO AUTOMATIC OLD ROOT DISK DETACHMENT..."
+          - "{% elif migration_failed %}"
+          - "✗ MIGRATION FAILED: Cache disk count mismatch detected"
+          - "✗ This indicates not all cache volumes were properly attached"
+          - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
+          - "{% elif migration_error %}"
+          - "✗ MIGRATION ERROR: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
+          - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
+          - "{% else %}"
+          - "? UNKNOWN RESPONSE - SKIPPING OLD ROOT DISK DETACHMENT for safety"
+          - "{% endif %}"
 
     ############################################################################
     # Step 10: Confirm Migration Complete
@@ -418,8 +653,81 @@
           - ""
           - "Volume Configuration:"
           - "  - New AL2023 root disk: /dev/xvda (created by Terraform)"
-          - "  - Old gateway volumes: {{ old_volumes.volumes | length }} disk(s)"
-          - "{% for vol in old_volumes.volumes %}    • {{ vol.id }} at /dev/sd{{ 'fghijklmn'[loop.index0] }}{% endfor %}"
+          - "  - Old gateway root disk: /dev/sdf ({{ root_disk.id }}, {{ root_disk.size }} GB)"
+          - "{% for cache_disk in cache_disks %}"
+          - "  - Cache disk {{ loop.index }}: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }} ({{ cache_disk.id }}, {{ cache_disk.size }} GB)"
+          - "{% endfor %}"
+          - ""
+          - "Disk Details:"
+          - "  ROOT DISK (contains old gateway OS & config):"
+          - "    - Volume: {{ root_disk.id }}"
+          - "    - Size: {{ root_disk.size }} GB"
+          - "    - Snapshot: {{ root_disk.snapshot_id }}"
+          - "    - Device: /dev/sdf"
+          - ""
+          - "  CACHE DISKS (contain cached data):"
+          - "{% for cache_disk in cache_disks %}"
+          - "    Cache Disk {{ loop.index }}:"
+          - "      - Volume: {{ cache_disk.id }}"
+          - "      - Size: {{ cache_disk.size }} GB"
+          - "      - Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}"
+          - "      - Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}"
+          - "{% endfor %}"
+          - ""
+          - "{{ 'PROCEEDING TO AUTOMATIC OLD ROOT DISK DETACHMENT...' if migration_successful else 'MIGRATION INCOMPLETE - SKIPPING OLD ROOT DISK DETACHMENT' }}"
+          - "=========================================="
+      when: migration_successful or not migration_successful
+
+    - name: Handle migration failure - cache disk mismatch
+      debug:
+        msg:
+          - "=========================================="
+          - "MIGRATION FAILED: CACHE DISK MISMATCH"
+          - "=========================================="
+          - "Error: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
+          - ""
+          - "This error indicates that not all cache volumes were properly attached."
+          - "Expected cache disks: {{ cache_disks | length }}"
+          - "Cache disk IDs: {{ cache_disks | map(attribute='id') | list }}"
+          - ""
+          - "TROUBLESHOOTING STEPS:"
+          - "1. Check volume attachment status in AWS Console"
+          - "2. Verify all cache volumes are attached to {{ new_instance_id }}"
+          - "3. Ensure volumes are attached to correct device names (/dev/sdg, /dev/sdh, etc.)"
+          - "4. Re-run migration after fixing volume attachments"
+          - ""
+          - "OLD ROOT DISK DETACHMENT SKIPPED FOR SAFETY"
+          - "=========================================="
+      when: migration_failed | default(false)
+
+    - name: Handle migration error - other issues
+      debug:
+        msg:
+          - "=========================================="
+          - "MIGRATION ERROR"
+          - "=========================================="
+          - "Error: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
+          - ""
+          - "TROUBLESHOOTING STEPS:"
+          - "1. Check gateway logs in AWS Console"
+          - "2. Verify gateway instance is running and accessible"
+          - "3. Ensure all volumes are properly attached"
+          - "4. Contact AWS Support if issue persists"
+          - ""
+          - "OLD ROOT DISK DETACHMENT SKIPPED FOR SAFETY"
+          - "=========================================="
+      when: migration_error | default(false) and not migration_failed | default(false)
+          - "    - Snapshot: {{ root_disk.snapshot_id }}"
+          - "    - Device: /dev/sdf"
+          - ""
+          - "  CACHE DISKS (contain cached data):"
+          - "{% for cache_disk in cache_disks %}"
+          - "    Cache Disk {{ loop.index }}:"
+          - "      - Volume: {{ cache_disk.id }}"
+          - "      - Size: {{ cache_disk.size }} GB"
+          - "      - Snapshot: {{ cache_disk.snapshot_id | default('None - blank disk') }}"
+          - "      - Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}"
+          - "{% endfor %}"
           - ""
           - "Next Steps:"
           - "1. Verify gateway status in AWS Console (should show 'Running')"
@@ -427,4 +735,166 @@
           - "3. If using SMB Guest Access, re-enter the password"
           - "4. Test file share access from clients"
           - "5. Once verified, you can terminate old instance: {{ old_instance_id }}"
+          - "6. OPTIONAL: Run with -e detach_old_root=true to detach old root volume"
           - "=========================================="
+
+    ############################################################################
+    # Step 11: Automatic Old Root Volume Detachment (when migration successful)
+    ############################################################################
+
+    - name: Automatic old root volume detachment notification
+      debug:
+        msg:
+          - ""
+          - "=========================================="
+          - "AUTOMATIC OLD ROOT VOLUME DETACHMENT"
+          - "=========================================="
+          - ""
+          - "Migration completed successfully! Automatically proceeding to detach old root volume."
+          - ""
+          - "Current Configuration:"
+          - "  - New AL2023 root: /dev/xvda ({{ new_instance_id }})"
+          - "  - Old root volume: /dev/sdf ({{ root_disk.id }})"
+          - "  - Cache volumes: {{ cache_disks | length }} disk(s) at /dev/sdg+"
+          - ""
+          - "PROCESS:"
+          - "1. Stop new gateway instance temporarily"
+          - "2. Detach old root volume ({{ root_disk.id }})"
+          - "3. Start gateway instance"
+          - "4. Verify gateway functionality"
+          - ""
+          - "The old root volume will be detached but NOT deleted."
+          - "You can delete it manually later if no longer needed."
+          - "=========================================="
+      when: migration_successful | default(false)
+
+    - name: Pause for old root volume detachment confirmation
+      pause:
+        prompt: |
+          
+          ==========================================
+          DETACH OLD ROOT VOLUME
+          ==========================================
+          
+          You have requested to detach the old root volume from the new gateway.
+          
+          Current Configuration:
+            - New AL2023 root: /dev/xvda ({{ new_instance_id }})
+            - Old root volume: /dev/sdf ({{ root_disk.id }})
+            - Cache volume: /dev/sdg ({{ cache_disk.id }})
+          
+          IMPORTANT WARNINGS:
+          1. This will STOP the new gateway instance temporarily
+          2. Only proceed if migration is complete and gateway is working
+          3. The old root volume will be detached but NOT deleted
+          4. You can delete it manually later if no longer needed
+          
+          Press ENTER to continue or Ctrl+C to abort...
+      when: should_detach_old_root
+
+    - name: Stop new instance for volume detachment
+      amazon.aws.ec2_instance:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        state: stopped
+        wait: true
+        wait_timeout: 300
+        region: "{{ aws_region }}"
+      when: should_detach_old_root
+      register: stop_result
+
+    - name: Confirm new instance is stopped
+      debug:
+        msg: "New gateway instance {{ new_instance_id }} is now stopped for volume detachment"
+      when: should_detach_old_root
+
+    - name: Detach old root volume from new instance
+      amazon.aws.ec2_vol:
+        id: "{{ root_disk.id }}"
+        instance: "{{ new_instance_id }}"
+        state: absent
+        region: "{{ aws_region }}"
+      when: should_detach_old_root
+      register: detach_result
+
+    - name: Wait for old root volume to be available
+      amazon.aws.ec2_vol_info:
+        volume_ids:
+          - "{{ root_disk.id }}"
+        region: "{{ aws_region }}"
+      register: volume_status
+      until: volume_status.volumes[0].state == 'available'
+      retries: 30
+      delay: 10
+      when: should_detach_old_root
+
+    - name: Confirm old root volume detached
+      debug:
+        msg: 
+          - "Old root volume {{ root_disk.id }} successfully detached"
+          - "Volume is now available and can be deleted if no longer needed"
+      when: should_detach_old_root
+
+    - name: Start new instance after volume detachment
+      amazon.aws.ec2_instance:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        state: running
+        wait: true
+        wait_timeout: 300
+        region: "{{ aws_region }}"
+      when: should_detach_old_root
+      register: start_result
+
+    - name: Get updated instance information after restart
+      amazon.aws.ec2_instance_info:
+        instance_ids:
+          - "{{ new_instance_id }}"
+        region: "{{ aws_region }}"
+      register: updated_instance_info
+      when: should_detach_old_root
+
+    - name: Display updated instance network info
+      debug:
+        msg:
+          - "Instance ID: {{ new_instance_id }}"
+          - "Public IP: {{ updated_instance_info.instances[0].public_ip_address | default('N/A') }}"
+          - "Private IP: {{ updated_instance_info.instances[0].private_ip_address }}"
+          - "State: {{ updated_instance_info.instances[0].state.name }}"
+      when: should_detach_old_root
+
+    - name: Display final volume configuration after detachment
+      amazon.aws.ec2_vol_info:
+        filters:
+          attachment.instance-id: "{{ new_instance_id }}"
+        region: "{{ aws_region }}"
+      register: final_volumes
+      when: should_detach_old_root
+
+    - name: Show final attached volumes
+      debug:
+        msg:
+          - "Final volume configuration for {{ new_instance_id }}:"
+          - "{% for vol in final_volumes.volumes %}"
+          - "  - {{ vol.id }}: {{ vol.size }}GB at {{ vol.attachment_set[0].device }} ({{ vol.attachment_set[0].state }})"
+          - "{% endfor %}"
+      when: should_detach_old_root
+
+    - name: Confirm old root volume detachment complete
+      debug:
+        msg:
+          - "=========================================="
+          - "OLD ROOT VOLUME DETACHMENT COMPLETE!"
+          - "=========================================="
+          - "Detached Volume: {{ root_disk.id }}"
+          - "Instance: {{ new_instance_id }}"
+          - "New Gateway IP: {{ updated_instance_info.instances[0].public_ip_address | default('N/A') }}"
+          - ""
+          - "The old root volume is now available and can be:"
+          - "  - Deleted if no longer needed"
+          - "  - Kept as backup"
+          - "  - Used for other purposes"
+          - ""
+          - "Gateway should be accessible at: http://{{ updated_instance_info.instances[0].public_ip_address | default('N/A') }}"
+          - "=========================================="
+      when: should_detach_old_root

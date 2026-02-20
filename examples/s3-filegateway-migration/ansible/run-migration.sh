@@ -107,13 +107,10 @@ echo -e "${YELLOW}WARNING: This will perform the following actions:${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo "1. Stop old gateway instance: $OLD_INSTANCE_ID"
 echo "2. Detach all volumes from old instance"
-echo "3. Attach cache volumes to new instance: $NEW_INSTANCE_ID"
-echo "4. Attach old root volume temporarily"
-echo "5. Start new instance and trigger migration"
-echo "6. Stop new instance, detach old root volume"
-echo "7. Start new instance (final)"
+echo "3. Attach all volumes to running new instance: $NEW_INSTANCE_ID"
+echo "4. Trigger migration via API"
 echo ""
-echo -e "${YELLOW}This process will take approximately 15-20 minutes.${NC}"
+echo -e "${YELLOW}This process will take approximately 10-15 minutes.${NC}"
 echo -e "${YELLOW}The gateway will be offline during this time.${NC}"
 echo ""
 
@@ -129,22 +126,35 @@ echo -e "${GREEN}Step 3: Running migration playbook...${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Run the Ansible playbook
+# Create logs directory if it doesn't exist
+LOGS_DIR="./logs"
+mkdir -p "$LOGS_DIR"
+
+# Generate log filename with timestamp
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="$LOGS_DIR/migration-${GATEWAY_ID}-${TIMESTAMP}.log"
+
+echo -e "${YELLOW}Migration output will be logged to: ${LOG_FILE}${NC}"
+echo ""
+
+# Run the Ansible playbook with output to both console and log file
 ansible-playbook migrate.yml \
     -e "old_instance_id=$OLD_INSTANCE_ID" \
     -e "new_instance_id=$NEW_INSTANCE_ID" \
     -e "gateway_id=$GATEWAY_ID" \
     -e "new_gateway_ip=$NEW_GATEWAY_IP" \
     -e "aws_region=$AWS_REGION" \
-    -v
+    -v 2>&1 | tee "$LOG_FILE"
 
-PLAYBOOK_EXIT_CODE=$?
+PLAYBOOK_EXIT_CODE=${PIPESTATUS[0]}
 
 echo ""
 if [ $PLAYBOOK_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}Migration completed successfully!${NC}"
     echo -e "${GREEN}========================================${NC}"
+    echo ""
+    echo -e "${GREEN}✓ Log file saved: ${LOG_FILE}${NC}"
     echo ""
     echo "Next steps:"
     echo "1. Verify gateway status in AWS Console"
@@ -156,7 +166,9 @@ else
     echo -e "${RED}Migration failed with exit code: $PLAYBOOK_EXIT_CODE${NC}"
     echo -e "${RED}========================================${NC}"
     echo ""
-    echo "Check the output above for errors."
+    echo -e "${RED}✗ Log file saved: ${LOG_FILE}${NC}"
+    echo ""
+    echo "Check the log file for detailed error information."
     echo "You may need to manually verify instance and volume states."
     exit $PLAYBOOK_EXIT_CODE
 fi

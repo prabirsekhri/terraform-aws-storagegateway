@@ -9,6 +9,7 @@ terraform.tfvars
 # Ansible
 ansible/aws_env/
 ansible/migration-volumes-*.txt
+ansible/logs/
 
 # OS
 .DS_Store

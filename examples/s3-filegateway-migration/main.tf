@@ -57,7 +57,7 @@ data "aws_ebs_volumes" "cache_volumes" {
 
   filter {
     name   = "attachment.device"
-    values = ["/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde"]
+    values = ["/dev/sdb", "/dev/sdc", "/dev/sdd", "/dev/sde", "/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi"]
   }
 }
 

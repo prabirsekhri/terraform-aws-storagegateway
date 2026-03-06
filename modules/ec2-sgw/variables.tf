@@ -127,3 +127,9 @@ variable "cache_block_device" {
     error_message = "The cache_block_device volume_type must be one of: gp2, gp3, io1, io2, st1, sc1."
   }
 }
+
+variable "create_eip" {
+  description = "Create an Elastic IP for public gateway activation. Set to false for private VPC activation."
+  type        = bool
+  default     = true
+}

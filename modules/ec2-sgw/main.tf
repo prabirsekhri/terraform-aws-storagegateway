@@ -59,12 +59,14 @@ resource "aws_instance" "ec2_sgw" {
 }
 
 resource "aws_eip" "ip" {
+  count  = var.create_eip ? 1 : 0
   domain = "vpc"
 }
 
 resource "aws_eip_association" "eip_assoc" {
+  count         = var.create_eip ? 1 : 0
   instance_id   = aws_instance.ec2_sgw.id
-  allocation_id = aws_eip.ip.id
+  allocation_id = aws_eip.ip[0].id
 }
 
 resource "aws_volume_attachment" "ebs_volume" {

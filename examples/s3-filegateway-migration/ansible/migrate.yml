@@ -272,7 +272,7 @@
           - "      All old volumes will be attached as additional disks"
           - "=========================================="
 
-    - name: Save volume configuration to file
+    - name: Display cache disk configuration for confirmation
       copy:
         content: |
           # Storage Gateway Migration - Volume Configuration
@@ -896,7 +896,7 @@
 
     - name: Display each final attached volume
       debug:
-        msg: "  - {{ item.id }}: {{ item.size }}GB at {{ item.attachment_set[0].device }} ({{ item.attachment_set[0].state }})"
+        msg: "  - {{ item.id }}: {{ item.size }}GB at {{ item.attachment_set[0].device }} ({{ item.attachment_set[0].status }})"
       loop: "{{ final_volumes.volumes | default([]) }}"
       when: should_detach_old_root
       tags: detach_old_root
@@ -919,4 +919,175 @@
           - "Gateway should be accessible at: http://{{ updated_instance_info.instances[0].public_ip_address | default('N/A') }}"
           - "=========================================="
       when: should_detach_old_root
+      tags: detach_old_root
+
+    ############################################################################
+    # Step 12: Check SMB Settings / Active Directory Domain Join Status
+    ############################################################################
+
+    - name: List all storage gateways
+      command: >
+        aws storagegateway list-gateways
+        --region "{{ aws_region }}"
+        --output json
+      register: list_gateways_result
+      changed_when: false
+      when: should_detach_old_root
+      tags: detach_old_root
+
+    - name: Parse gateway list and find gateway by instance ID
+      set_fact:
+        discovered_gateways: "{{ list_gateways_result.stdout | from_json }}"
+      when: should_detach_old_root
+      tags: detach_old_root
+
+    - name: Discover gateway ID from instance
+      set_fact:
+        discovered_gateway_id: "{{ item.GatewayId }}"
+        discovered_gateway_arn: "{{ item.GatewayARN }}"
+      loop: "{{ discovered_gateways.Gateways }}"
+      when: should_detach_old_root and item.Ec2InstanceId | default('') == new_instance_id
+      tags: detach_old_root
+
+    - name: Fall back to env var gateway ID if discovery failed
+      set_fact:
+        discovered_gateway_id: "{{ gateway_id }}"
+        discovered_gateway_arn: "arn:aws:storagegateway:{{ aws_region }}:{{ caller_info.account | default('') }}:gateway/{{ gateway_id }}"
+      when: should_detach_old_root and discovered_gateway_id is not defined and gateway_id | default('') != ''
+      tags: detach_old_root
+
+    - name: Display discovered gateway info
+      debug:
+        msg:
+          - "Discovered Gateway ID: {{ discovered_gateway_id | default('NOT FOUND') }}"
+          - "Discovered Gateway ARN: {{ discovered_gateway_arn | default('NOT FOUND') }}"
+      when: should_detach_old_root
+      tags: detach_old_root
+
+    - name: Retrieve SMB settings for gateway
+      command: >
+        aws storagegateway describe-smb-settings
+        --gateway-arn "{{ discovered_gateway_arn }}"
+        --region "{{ aws_region }}"
+        --output json
+      register: smb_settings_result
+      changed_when: false
+      when: should_detach_old_root and discovered_gateway_arn is defined
+      tags: detach_old_root
+
+    - name: Parse SMB settings response
+      set_fact:
+        smb_settings: "{{ smb_settings_result.stdout | from_json }}"
+      when: should_detach_old_root and smb_settings_result is not skipped
+      tags: detach_old_root
+
+    - name: Display Active Directory domain join status
+      debug:
+        msg:
+          - "=========================================="
+          - "SMB SETTINGS / ACTIVE DIRECTORY STATUS"
+          - "=========================================="
+          - "Gateway ID: {{ discovered_gateway_id }}"
+          - "Gateway ARN: {{ discovered_gateway_arn }}"
+          - "AD Domain Joined: {{ 'Yes' if smb_settings.ActiveDirectoryStatus | default('') in ['JOINED', 'ACCESS_DENIED'] else 'No' }}"
+          - "AD Status: {{ smb_settings.ActiveDirectoryStatus | default('NOT_CONFIGURED') }}"
+          - "Domain Name: {{ smb_settings.DomainName | default('N/A') }}"
+          - "SMB Security Strategy: {{ smb_settings.SMBSecurityStrategy | default('N/A') }}"
+          - "File Share Visibility: {{ smb_settings.FileSharesVisible | default('N/A') }}"
+          - "=========================================="
+      when: should_detach_old_root and smb_settings is defined
+      tags: detach_old_root
+
+    ############################################################################
+    # Step 13: Rejoin Active Directory Domain (if previously joined)
+    ############################################################################
+
+    - name: Set AD joined flag
+      set_fact:
+        ad_was_joined: "{{ smb_settings.ActiveDirectoryStatus | default('') == 'JOINED' }}"
+      when: should_detach_old_root and smb_settings is defined
+      tags: detach_old_root
+
+    - name: Notify AD rejoin required
+      debug:
+        msg:
+          - "=========================================="
+          - "ACTIVE DIRECTORY REJOIN REQUIRED"
+          - "=========================================="
+          - "The gateway was previously joined to domain: {{ smb_settings.DomainName | default('N/A') }}"
+          - "You will be prompted for AD credentials to rejoin."
+          - "=========================================="
+      when: should_detach_old_root and ad_was_joined
+      tags: detach_old_root
+
+    - name: Prompt for AD domain name
+      pause:
+        prompt: "Enter the Active Directory domain name (e.g. corp.example.com)"
+      register: ad_domain_input
+      when: should_detach_old_root and ad_was_joined
+      tags: detach_old_root
+
+    - name: Prompt for AD username
+      pause:
+        prompt: "Enter the AD domain username (e.g. Admin)"
+      register: ad_username_input
+      when: should_detach_old_root and ad_was_joined
+      tags: detach_old_root
+
+    - name: Prompt for AD password
+      pause:
+        prompt: "Enter the AD domain password"
+        echo: false
+      register: ad_password_input
+      when: should_detach_old_root and ad_was_joined
+      tags: detach_old_root
+
+    - name: Rejoin gateway to Active Directory domain
+      command: >
+        aws storagegateway join-domain
+        --gateway-arn "{{ discovered_gateway_arn }}"
+        --domain-name "{{ ad_domain_input.user_input }}"
+        --user-name "{{ ad_username_input.user_input }}"
+        --password "{{ ad_password_input.user_input }}"
+        --region "{{ aws_region }}"
+        --output json
+      register: ad_join_result
+      changed_when: true
+      no_log: false
+      ignore_errors: true
+      when: should_detach_old_root and ad_was_joined
+      tags: detach_old_root
+
+    - name: Display AD join error details
+      debug:
+        msg:
+          - "AD Join stderr: {{ ad_join_result.stderr | default('none') }}"
+          - "AD Join stdout: {{ ad_join_result.stdout | default('none') }}"
+          - "AD Join rc: {{ ad_join_result.rc | default('N/A') }}"
+      when: should_detach_old_root and ad_was_joined and ad_join_result.rc | default(0) != 0
+      tags: detach_old_root
+
+    - name: Parse AD join response
+      set_fact:
+        ad_join_response: "{{ ad_join_result.stdout | from_json }}"
+      when: should_detach_old_root and ad_was_joined and ad_join_result.rc | default(1) == 0
+      tags: detach_old_root
+
+    - name: Display AD rejoin result
+      debug:
+        msg:
+          - "=========================================="
+          - "ACTIVE DIRECTORY REJOIN RESULT"
+          - "=========================================="
+          - "Gateway ID: {{ discovered_gateway_id }}"
+          - "Domain: {{ ad_domain_input.user_input }}"
+          - "Status: {{ 'SUCCESS' if ad_join_response.ActiveDirectoryStatus | default('') == 'JOINED' else 'FAILED - ' + ad_join_response.ActiveDirectoryStatus | default('UNKNOWN') }}"
+          - "=========================================="
+      when: should_detach_old_root and ad_was_joined
+      tags: detach_old_root
+
+    - name: Skip AD rejoin - not previously joined
+      debug:
+        msg: "Gateway was not joined to an AD domain. Skipping AD rejoin."
+      when: should_detach_old_root and not ad_was_joined
       tags: detach_old_root

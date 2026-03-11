@@ -435,7 +435,7 @@
         success_msg: "New instance {{ new_instance_id }} is running and ready for volume attachment"
 
     ############################################################################
-    # Step 6: Attach All Volumes to Running Instance
+    # Step 6: Attach All Volumes to the new Gateway Instance
     ############################################################################
 
     - name: Display volume attachment plan
@@ -642,12 +642,6 @@
       register: migration_result
       changed_when: true
 
-    - name: Display migration result
-      debug:
-        msg:
-          - "Migration API Response:"
-          - "{{ migration_result.stdout }}"
-
     - name: Debug migration response
       debug:
         msg:
@@ -676,27 +670,30 @@
           - "✓ PROCEEDING TO AUTOMATIC OLD ROOT DISK DETACHMENT..."
       when: migration_successful
 
-    - name: Display migration failure - cache disk mismatch
-      debug:
-        msg:
-          - "✗ MIGRATION FAILED: Cache disk count mismatch detected"
-          - "✗ This indicates not all cache volumes were properly attached"
-          - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
-      when: migration_failed
+    - name: Handle migration failures
+      block:
+        - name: Display migration failure - cache disk mismatch
+          debug:
+            msg:
+              - "✗ MIGRATION FAILED: Cache disk count mismatch detected"
+              - "✗ This indicates not all cache volumes were properly attached"
+              - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
+          when: migration_failed
 
-    - name: Display migration error
-      debug:
-        msg:
-          - "✗ MIGRATION ERROR: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
-          - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
-      when: migration_error and not migration_failed
+        - name: Display migration error
+          debug:
+            msg:
+              - "✗ MIGRATION ERROR: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
+              - "✗ SKIPPING OLD ROOT DISK DETACHMENT for safety"
+          when: migration_error and not migration_failed
 
-    - name: Display unknown response
-      debug:
-        msg:
-          - "? UNKNOWN RESPONSE - SKIPPING OLD ROOT DISK DETACHMENT for safety"
-          - "Response: {{ migration_result.stdout }}"
-      when: not migration_successful and not migration_failed and not migration_error
+        - name: Display unknown response
+          debug:
+            msg:
+              - "? UNKNOWN RESPONSE - SKIPPING OLD ROOT DISK DETACHMENT for safety"
+              - "Response: {{ migration_result.stdout }}"
+          when: not migration_successful and not migration_failed and not migration_error
+      when: not migration_successful
 
     ############################################################################
     # Step 10: Confirm Migration Complete
@@ -730,58 +727,48 @@
           - "=========================================="
       when: migration_successful or not migration_successful
 
-    - name: Display individual cache disk details
-      debug:
-        msg:
-          - "    Cache Disk {{ ansible_loop.index }}:"
-          - "      - Volume: {{ item.id }}"
-          - "      - Size: {{ item.size }} GB"
-          - "      - Snapshot: {{ item.snapshot_id | default('None - blank disk') }}"
-          - "      - Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }}"
-      loop: "{{ cache_disks }}"
-      loop_control:
-        extended: true
-      when: migration_successful or not migration_successful
+    - name: Handle migration errors
+      block:
+        - name: Handle migration failure - cache disk mismatch
+          debug:
+            msg:
+              - "=========================================="
+              - "MIGRATION FAILED: CACHE DISK MISMATCH"
+              - "=========================================="
+              - "Error: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
+              - ""
+              - "This error indicates that not all cache volumes were properly attached."
+              - "Expected cache disks: {{ cache_disks | length }}"
+              - "Cache disk IDs: {{ cache_disks | map(attribute='id') | list }}"
+              - ""
+              - "TROUBLESHOOTING STEPS:"
+              - "1. Check volume attachment status in AWS Console"
+              - "2. Verify all cache volumes are attached to {{ new_instance_id }}"
+              - "3. Ensure volumes are attached to correct device names (/dev/sdg, /dev/sdh, etc.)"
+              - "4. Re-run migration after fixing volume attachments"
+              - ""
+              - "OLD ROOT DISK DETACHMENT SKIPPED FOR SAFETY"
+              - "=========================================="
+          when: migration_failed | default(false)
 
-    - name: Handle migration failure - cache disk mismatch
-      debug:
-        msg:
-          - "=========================================="
-          - "MIGRATION FAILED: CACHE DISK MISMATCH"
-          - "=========================================="
-          - "Error: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
-          - ""
-          - "This error indicates that not all cache volumes were properly attached."
-          - "Expected cache disks: {{ cache_disks | length }}"
-          - "Cache disk IDs: {{ cache_disks | map(attribute='id') | list }}"
-          - ""
-          - "TROUBLESHOOTING STEPS:"
-          - "1. Check volume attachment status in AWS Console"
-          - "2. Verify all cache volumes are attached to {{ new_instance_id }}"
-          - "3. Ensure volumes are attached to correct device names (/dev/sdg, /dev/sdh, etc.)"
-          - "4. Re-run migration after fixing volume attachments"
-          - ""
-          - "OLD ROOT DISK DETACHMENT SKIPPED FOR SAFETY"
-          - "=========================================="
-      when: migration_failed | default(false)
-
-    - name: Handle migration error - other issues
-      debug:
-        msg:
-          - "=========================================="
-          - "MIGRATION ERROR"
-          - "=========================================="
-          - "Error: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
-          - ""
-          - "TROUBLESHOOTING STEPS:"
-          - "1. Check gateway logs in AWS Console"
-          - "2. Verify gateway instance is running and accessible"
-          - "3. Ensure all volumes are properly attached"
-          - "4. Contact AWS Support if issue persists"
-          - ""
-          - "OLD ROOT DISK DETACHMENT SKIPPED FOR SAFETY"
-          - "=========================================="
-      when: migration_error | default(false) and not migration_failed | default(false)
+        - name: Handle migration error - other issues
+          debug:
+            msg:
+              - "=========================================="
+              - "MIGRATION ERROR"
+              - "=========================================="
+              - "Error: {{ migration_result.stdout | regex_replace('<[^>]*>', '') | trim }}"
+              - ""
+              - "TROUBLESHOOTING STEPS:"
+              - "1. Check gateway logs in AWS Console"
+              - "2. Verify gateway instance is running and accessible"
+              - "3. Ensure all volumes are properly attached"
+              - "4. Contact AWS Support if issue persists"
+              - ""
+              - "OLD ROOT DISK DETACHMENT SKIPPED FOR SAFETY"
+              - "=========================================="
+          when: migration_error | default(false) and not migration_failed | default(false)
+      when: not migration_successful
 
     ############################################################################
     # Step 11: Automatic Old Root Volume Detachment (when migration successful)
@@ -792,26 +779,19 @@
         msg:
           - ""
           - "=========================================="
-          - "AUTOMATIC OLD ROOT VOLUME DETACHMENT"
+          - "OLD GATEWAY ROOT VOLUME DETACHMENT"
           - "=========================================="
           - ""
-          - "Migration completed successfully! Automatically proceeding to detach old root volume."
+          - "Migration completed successfully! Proceeding to detach old root volume."
           - ""
           - "Current Configuration:"
           - "  - New AL2023 root: /dev/xvda ({{ new_instance_id }})"
           - "  - Old root volume: /dev/sdf ({{ root_disk.id }})"
           - "  - Cache volumes: {{ cache_disks | length }} disk(s) at /dev/sdg+"
           - ""
-          - "PROCESS:"
-          - "1. Stop new gateway instance temporarily"
-          - "2. Detach old root volume ({{ root_disk.id }})"
-          - "3. Start gateway instance"
-          - "4. Verify gateway functionality"
-          - ""
-          - "The old root volume will be detached but NOT deleted."
-          - "You can delete it manually later if no longer needed."
           - "=========================================="
       when: migration_successful | default(false)
+      tags: detach_old_root
 
     - name: Pause for old root volume detachment confirmation
       pause:
@@ -828,14 +808,9 @@
             - Old root volume: /dev/sdf ({{ root_disk.id }})
             - Cache volumes: {{ cache_disks | length }} disk(s) at /dev/sdg+
           
-          IMPORTANT WARNINGS:
-          1. This will STOP the new gateway instance temporarily
-          2. Only proceed if migration is complete and gateway is working
-          3. The old root volume will be detached but NOT deleted
-          4. You can delete it manually later if no longer needed
-          
           Press ENTER to continue or Ctrl+C to abort...
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Stop new instance for volume detachment
       amazon.aws.ec2_instance:
@@ -847,11 +822,13 @@
         region: "{{ aws_region }}"
       when: should_detach_old_root
       register: stop_result
+      tags: detach_old_root
 
     - name: Confirm new instance is stopped
       debug:
         msg: "New gateway instance {{ new_instance_id }} is now stopped for volume detachment"
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Detach old root volume from new instance
       amazon.aws.ec2_vol:
@@ -861,17 +838,7 @@
         region: "{{ aws_region }}"
       when: should_detach_old_root
       register: detach_result
-
-    - name: Wait for old root volume to be available
-      amazon.aws.ec2_vol_info:
-        volume_ids:
-          - "{{ root_disk.id }}"
-        region: "{{ aws_region }}"
-      register: volume_status
-      until: volume_status.volumes[0].state == 'available'
-      retries: 30
-      delay: 10
-      when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Confirm old root volume detached
       debug:
@@ -879,6 +846,7 @@
           - "Old root volume {{ root_disk.id }} successfully detached"
           - "Volume is now available and can be deleted if no longer needed"
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Start new instance after volume detachment
       amazon.aws.ec2_instance:
@@ -890,6 +858,7 @@
         region: "{{ aws_region }}"
       when: should_detach_old_root
       register: start_result
+      tags: detach_old_root
 
     - name: Get updated instance information after restart
       amazon.aws.ec2_instance_info:
@@ -898,6 +867,7 @@
         region: "{{ aws_region }}"
       register: updated_instance_info
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Display updated instance network info
       debug:
@@ -907,6 +877,7 @@
           - "Private IP: {{ updated_instance_info.instances[0].private_ip_address }}"
           - "State: {{ updated_instance_info.instances[0].state.name }}"
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Display final volume configuration after detachment
       amazon.aws.ec2_vol_info:
@@ -915,17 +886,20 @@
         region: "{{ aws_region }}"
       register: final_volumes
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Show final attached volumes
       debug:
         msg: "Final volume configuration for {{ new_instance_id }}:"
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Display each final attached volume
       debug:
         msg: "  - {{ item.id }}: {{ item.size }}GB at {{ item.attachment_set[0].device }} ({{ item.attachment_set[0].state }})"
       loop: "{{ final_volumes.volumes | default([]) }}"
       when: should_detach_old_root
+      tags: detach_old_root
 
     - name: Confirm old root volume detachment complete
       debug:
@@ -945,3 +919,4 @@
           - "Gateway should be accessible at: http://{{ updated_instance_info.instances[0].public_ip_address | default('N/A') }}"
           - "=========================================="
       when: should_detach_old_root
+      tags: detach_old_root

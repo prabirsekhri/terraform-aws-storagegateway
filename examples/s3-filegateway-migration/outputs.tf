@@ -5,18 +5,18 @@
 output "migration_summary" {
   description = "Summary of the migration process"
   value = {
-    gateway_id          = var.gateway_id
-    old_instance_id     = data.aws_instance.old_sgw.id
-    new_instance_id     = module.new_sgw.instance_id
-    old_instance_type   = data.aws_instance.old_sgw.instance_type
-    new_instance_type   = local.new_instance_type
-    old_root_disk_size  = local.old_root_disk.volume_size
-    new_root_disk_size  = local.root_block_device.disk_size
-    root_disk_type      = local.root_block_device.volume_type
-    vpc_id              = local.vpc_id
-    subnet_id           = data.aws_instance.old_sgw.subnet_id
-    availability_zone   = data.aws_instance.old_sgw.availability_zone
-    cache_volumes       = data.aws_ebs_volumes.cache_volumes.ids
+    gateway_id         = var.gateway_id
+    old_instance_id    = data.aws_instance.old_sgw.id
+    new_instance_id    = module.new_sgw.instance_id
+    old_instance_type  = data.aws_instance.old_sgw.instance_type
+    new_instance_type  = local.new_instance_type
+    old_root_disk_size = local.old_root_disk.volume_size
+    new_root_disk_size = local.root_block_device.disk_size
+    root_disk_type     = local.root_block_device.volume_type
+    vpc_id             = local.vpc_id
+    subnet_id          = data.aws_instance.old_sgw.subnet_id
+    availability_zone  = data.aws_instance.old_sgw.availability_zone
+    cache_volumes      = data.aws_ebs_volumes.cache_volumes.ids
   }
 }
 

@@ -136,6 +136,6 @@ variable "create_cache_volume" {
 
 variable "create_eip" {
   type        = bool
-  description = "Create and associate an Elastic IP. Set to false for migration scenarios."
+  description = "Create and associate an Elastic IP. Set to false for if eip is not a requirement."
   default     = false
 }

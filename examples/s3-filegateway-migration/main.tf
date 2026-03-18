@@ -40,7 +40,7 @@ locals {
 
   # Extract root disk configuration from old instance (convert set to list)
   old_root_disk = tolist(data.aws_instance.old_sgw.root_block_device)[0]
-  
+
   # Build root_block_device config matching old instance
   root_block_device = {
     disk_size   = try(var.root_block_device.disk_size, local.old_root_disk.volume_size)

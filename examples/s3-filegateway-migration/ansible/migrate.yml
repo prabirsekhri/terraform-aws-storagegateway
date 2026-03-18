@@ -1,8 +1,8 @@
-
-################################################################################
+---
+# ###############################################################################
 # Storage Gateway AL2023 Migration Playbook
 # Automates the manual steps after Terraform provisioning
-################################################################################
+# ###############################################################################
 
 - name: Execute Storage Gateway AL2023 Migration
   hosts: localhost
@@ -140,41 +140,41 @@
 
     - name: Pause if cache dirty percentage is high
       pause:
-        prompt: |
-          
+        prompt: |2
+
           ==========================================
           WARNING: Cache Dirty Percentage Check
           ==========================================
-          
+
           Current Cache Dirty: {{ cache_dirty_percent.Average | default('N/A') }}%
-          
+
           {% if cache_dirty_percent.Average | default(0) | float > 5 %}
           ⚠️  HIGH RISK: Cache dirty is above 5%
-          
+
           This means {{ cache_dirty_percent.Average | float | round(1) }}% of cached data has NOT been uploaded to S3.
           Proceeding with migration now may result in DATA LOSS.
-          
+
           STRONGLY RECOMMENDED:
           1. Press Ctrl+C to abort
           2. Wait for cache to flush (monitor CachePercentDirty in CloudWatch)
           3. Re-run migration when cache dirty is 0%
-          
+
           Or press ENTER to continue anyway (NOT RECOMMENDED - DATA LOSS RISK)
-          
+
           {% elif cache_dirty_percent.Average | default(0) | float > 0 %}
           ⚠️  LOW RISK: Cache dirty is {{ cache_dirty_percent.Average | float | round(1) }}%
-          
+
           A small amount of data has not been uploaded to S3 yet.
-          
+
           RECOMMENDED:
           1. Press Ctrl+C to abort and wait a few minutes
           2. Re-run migration when cache dirty is 0%
-          
+
           Or press ENTER to continue (low risk but not ideal)
-          
+
           {% else %}
           ✓ Cache is clean (0% dirty) - safe to proceed with migration
-          
+
           Press ENTER to continue...
           {% endif %}
       when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
@@ -214,7 +214,8 @@
         msg:
           - "=== VOLUME CLASSIFICATION DEBUG ==="
           - "Total volumes found: {{ old_volumes.volumes | length }}"
-          - "Root disk candidates (with snapshot): {{ old_volumes.volumes | selectattr('snapshot_id', 'defined') | selectattr('snapshot_id', '!=', '') | list | length }}"
+          - "Root disk candidates (with snapshot): {{ old_volumes.volumes | selectattr('snapshot_id', 'defined') | selectattr('snapshot_id', '!=', '') | list | length
+            }}"
           - "Cache disks without snapshot_id: {{ cache_disks_no_snapshot | length }}"
           - "Cache disks with empty snapshot_id: {{ cache_disks_empty_snapshot | length }}"
           - "Total cache disks identified: {{ cache_disks | length }}"
@@ -280,17 +281,17 @@
           # Old Instance: {{ old_instance_id }}
           # New Instance: {{ new_instance_id }}
           # Gateway ID: {{ gateway_id }}
-          
+
           New Instance Root (AL2023):
             Device: /dev/xvda (created by Terraform)
-          
+
           OLD GATEWAY ROOT DISK:
             Volume ID: {{ root_disk.id }}
             Size: {{ root_disk.size }} GB
             Snapshot: {{ root_disk.snapshot_id }}
             Original Device: {{ root_disk.attachment_set[0].device }}
             New Device: /dev/sdf
-          
+
           OLD GATEWAY CACHE DISKS:
           {% for cache_disk in cache_disks %}
           Cache Disk {{ loop.index }}:
@@ -300,7 +301,7 @@
             Original Device: {{ cache_disk.attachment_set[0].device }}
             New Device: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][loop.index0] }}
           {% endfor %}
-          
+
           MIGRATION NOTES:
           - Root disk contains the old gateway OS and configuration
           - Cache disks contain cached data for the gateway
@@ -327,32 +328,32 @@
 
     - name: Pause for user confirmation
       pause:
-        prompt: |
-          
+        prompt: |2
+
           ==========================================
           VOLUME CONFIGURATION DISCOVERED
           ==========================================
-          
+
           New Instance Root: /dev/xvda (AL2023 - created by Terraform)
-          
+
           OLD GATEWAY ROOT DISK:
             {{ root_disk.id }} ({{ root_disk.size }} GB) → /dev/sdf
             Original: {{ root_disk.attachment_set[0].device }}
             Snapshot: {{ root_disk.snapshot_id }}
-          
+
           OLD GATEWAY CACHE DISKS: {{ cache_disks | length }} disk(s)
           (See cache disk details above)
-          
+
           MIGRATION PROCESS:
           1. Stop old instance: {{ old_instance_id }}
           2. Detach all volumes from old instance
           3. Attach all volumes to running new instance: {{ new_instance_id }}
           4. Trigger migration via API
           5. Migration complete!
-          
+
           Press ENTER to continue or Ctrl+C to abort...
 
-  
+
     ############################################################################
     # Step 3: Stop Old Gateway Instance
     ############################################################################
@@ -518,7 +519,8 @@
         filters:
           volume-id: "{{ root_disk.id }}"
       register: root_volume_status
-      until: root_volume_status.volumes | length > 0 and root_volume_status.volumes[0].attachment_set | length > 0 and root_volume_status.volumes[0].attachment_set[0].status == 'attached'
+      until: root_volume_status.volumes | length > 0 and root_volume_status.volumes[0].attachment_set | length > 0 and
+        root_volume_status.volumes[0].attachment_set[0].status == 'attached'
       retries: 30
       delay: 10
       failed_when: false
@@ -529,7 +531,8 @@
         filters:
           volume-id: "{{ item.id }}"
       register: cache_volume_statuses
-      until: cache_volume_statuses.volumes | length > 0 and cache_volume_statuses.volumes[0].attachment_set | length > 0 and cache_volume_statuses.volumes[0].attachment_set[0].status == 'attached'
+      until: cache_volume_statuses.volumes | length > 0 and cache_volume_statuses.volumes[0].attachment_set | length > 0 and
+        cache_volume_statuses.volumes[0].attachment_set[0].status == 'attached'
       retries: 30
       delay: 10
       failed_when: false
@@ -544,7 +547,8 @@
 
     - name: Count attached cache disks
       set_fact:
-        attached_cache_count: "{{ attached_volumes.volumes | rejectattr('attachment_set.0.device', 'equalto', '/dev/xvda') | rejectattr('attachment_set.0.device', 'equalto', '/dev/sdf') | list | length }}"
+        attached_cache_count: "{{ attached_volumes.volumes | rejectattr('attachment_set.0.device', 'equalto', '/dev/xvda') | rejectattr('attachment_set.0.device',
+          'equalto', '/dev/sdf') | list | length }}"
         expected_cache_count: "{{ cache_disks | length }}"
 
     - name: Verify cache disk attachment count
@@ -555,15 +559,16 @@
           CRITICAL: Cache disk attachment mismatch!
           Expected {{ expected_cache_count }} cache disks but found {{ attached_cache_count }} attached.
           This will cause migration to fail with "Expected {{ expected_cache_count }} cache disks attached but found {{ attached_cache_count }}"
-          
+
           Attached volumes: {{ attached_volumes.volumes | map(attribute='id') | list }}
           Expected cache disks: {{ cache_disks | map(attribute='id') | list }}
         success_msg: "✓ All {{ expected_cache_count }} cache disks successfully attached"
 
     - name: Check for any failed attachments
       debug:
-        msg: 
-          - "ROOT DISK Status: {{ 'ATTACHED' if root_volume_status.volumes | length > 0 and root_volume_status.volumes[0].attachment_set | length > 0 else 'FAILED' }}"
+        msg:
+          - "ROOT DISK Status: {{ 'ATTACHED' if root_volume_status.volumes | length > 0 and root_volume_status.volumes[0].attachment_set | length > 0 else 'FAILED'
+            }}"
           - "CACHE DISKS Status: {{ attached_cache_count }}/{{ expected_cache_count }} attached successfully"
 
     - name: Verify all volume attachments
@@ -583,7 +588,8 @@
 
     - name: Display individual attached cache disks
       debug:
-        msg: "  - Cache disk {{ ansible_loop.index }}: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }} ({{ item.id }}, {{ item.size }} GB)"
+        msg: "  - Cache disk {{ ansible_loop.index }}: /dev/sd{{ ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'][ansible_loop.index0] }} ({{ item.id }}, {{ item.size }}
+          GB)"
       loop: "{{ cache_disks }}"
       loop_control:
         extended: true
@@ -614,15 +620,13 @@
     - name: Update gateway IP variable with new public IP
       set_fact:
         new_gateway_ip: "{{ new_instance_info_updated.instances[0].public_ip_address }}"
-        cacheable: no
+        cacheable: false
 
     - name: Display updated gateway IP
       debug:
-        msg: 
+        msg:
           - "OLD IP (from environment): {{ lookup('env', 'NEW_GATEWAY_IP') }}"
           - "NEW IP (after restart): {{ new_gateway_ip }}"
-
-  
 
     ############################################################################
     # Step 9: Trigger Migration via URL
@@ -660,7 +664,8 @@
       debug:
         msg:
           - "=========================================="
-          - "Migration Status: {{ 'COMPLETED SUCCESSFULLY' if migration_successful else ('FAILED - CACHE DISK MISMATCH' if migration_failed else ('ERROR' if migration_error else 'UNKNOWN')) }}"
+          - "Migration Status: {{ 'COMPLETED SUCCESSFULLY' if migration_successful else ('FAILED - CACHE DISK MISMATCH' if migration_failed else ('ERROR' if migration_error
+            else 'UNKNOWN')) }}"
           - "=========================================="
           - "API Response: {{ migration_result.stdout }}"
 
@@ -795,19 +800,19 @@
 
     - name: Pause for old root volume detachment confirmation
       pause:
-        prompt: |
-          
+        prompt: |2
+
           ==========================================
           DETACH OLD ROOT VOLUME
           ==========================================
-          
+
           You have requested to detach the old root volume from the new gateway.
-          
+
           Current Configuration:
             - New AL2023 root: /dev/xvda ({{ new_instance_id }})
             - Old root volume: /dev/sdf ({{ root_disk.id }})
             - Cache volumes: {{ cache_disks | length }} disk(s) at /dev/sdg+
-          
+
           Press ENTER to continue or Ctrl+C to abort...
       when: should_detach_old_root
       tags: detach_old_root
@@ -842,7 +847,7 @@
 
     - name: Confirm old root volume detached
       debug:
-        msg: 
+        msg:
           - "Old root volume {{ root_disk.id }} successfully detached"
           - "Volume is now available and can be deleted if no longer needed"
       when: should_detach_old_root
@@ -1081,7 +1086,8 @@
           - "=========================================="
           - "Gateway ID: {{ discovered_gateway_id }}"
           - "Domain: {{ ad_domain_input.user_input }}"
-          - "Status: {{ 'SUCCESS' if ad_join_response.ActiveDirectoryStatus | default('') == 'JOINED' else 'FAILED - ' + ad_join_response.ActiveDirectoryStatus | default('UNKNOWN') }}"
+          - "Status: {{ 'SUCCESS' if ad_join_response.ActiveDirectoryStatus | default('') == 'JOINED' else 'FAILED - ' + ad_join_response.ActiveDirectoryStatus |
+            default('UNKNOWN') }}"
           - "=========================================="
       when: should_detach_old_root and ad_was_joined
       tags: detach_old_root

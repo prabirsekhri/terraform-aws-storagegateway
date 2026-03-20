@@ -22,12 +22,14 @@ resource "aws_instance" "ec2_sgw" {
   #checkov:skip=CKV_AWS_126:Detailed monitoring is optional for Storage Gateway EC2 instances
   #checkov:skip=CKV2_AWS_41:IAM role attachment is optional - users can attach roles via instance profile variable if needed
   ami                    = data.aws_ssm_parameter.sgw_ami.value
-  vpc_security_group_ids = local.vpc_security_group_ids
+  vpc_security_group_ids = var.create_security_group ? aws_security_group.ec2_sg[*].id : [var.security_group_id]
   subnet_id              = var.subnet_id
   instance_type          = var.instance_type
   key_name               = var.ssh_key_name
   ebs_optimized          = true
   availability_zone      = var.availability_zone
+
+  user_data_base64 = var.user_data != null ? base64encode(var.user_data) : null
 
   metadata_options {
     http_endpoint               = "enabled"

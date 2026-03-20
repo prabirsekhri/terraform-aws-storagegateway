@@ -139,3 +139,9 @@ variable "create_eip" {
   description = "Create and associate an Elastic IP. Set to false for if eip is not a requirement."
   default     = false
 }
+
+variable "user_data" {
+  type        = string
+  description = "User data script for gateway configuration at launch (e.g., DNS via admincli). Runs once on first boot."
+  default     = null
+}

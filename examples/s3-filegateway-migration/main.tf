@@ -68,7 +68,7 @@ data "aws_ebs_volumes" "cache_volumes" {
 module "new_sgw" {
   source = "../../modules/ec2-sgw"
 
-  name              = "${var.gateway_id}-al2023"
+  name              = "${var.gateway_id}-new"
   gateway_type      = var.gateway_type
   subnet_id         = data.aws_instance.old_sgw.subnet_id
   vpc_id            = local.vpc_id
@@ -86,5 +86,8 @@ module "new_sgw" {
 
   # Preserve root block device settings from old instance
   root_block_device = local.root_block_device
+
+  # Optional user-data for network config (e.g., DNS via admincli)
+  user_data = var.user_data
 }
 

@@ -37,6 +37,12 @@ variable "reuse_eip" {
   default     = false
 }
 
+variable "user_data" {
+  type        = string
+  description = "User data script for gateway network configuration via admincli (e.g., DNS)"
+  default     = null
+}
+
 variable "root_block_device" {
   description = "Root block device configuration of the new instance will match the old gateway's root disk configuration."
   type        = map(any)

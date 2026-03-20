@@ -1,10 +1,10 @@
 ---
 # ###############################################################################
-# Storage Gateway AL2023 Migration Playbook
+# Storage Gateway Migration Playbook
 # Automates the manual steps after Terraform provisioning
 # ###############################################################################
 
-- name: Execute Storage Gateway AL2023 Migration
+- name: Execute Storage Gateway Migration
   hosts: localhost
   gather_facts: true
   vars:
@@ -82,7 +82,7 @@
           - "Region: {{ aws_region }}"
 
     ############################################################################
-    # Step 1.5: Check Cache Dirty Percentage
+    # Step 2: Check Cache Dirty Percentage
     ############################################################################
 
     - name: Get cache dirty percentage metric from CloudWatch
@@ -180,7 +180,43 @@
       when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
 
     ############################################################################
-    # Step 2: Discover all volumes attached to the existing gateway instance
+    # Step 3: Verify Port 80 Connectivity to New Gateway Instance
+    ############################################################################
+
+    - name: Check port 80 connectivity to new gateway instance
+      wait_for:
+        host: "{{ new_gateway_ip }}"
+        port: 80
+        timeout: 30
+        state: started
+      register: port_check
+      ignore_errors: true
+
+    - name: Display port 80 connectivity result
+      debug:
+        msg:
+          - "=========================================="
+          - "Port 80 Connectivity Check"
+          - "=========================================="
+          - "Gateway IP: {{ new_gateway_ip }}"
+          - "Status: {{ 'REACHABLE' if port_check is succeeded else 'UNREACHABLE' }}"
+          - "=========================================="
+
+    - name: Fail if port 80 is not reachable
+      fail:
+        msg: |
+          Port 80 is not reachable on {{ new_gateway_ip }}.
+          The migration API requires HTTP access on port 80 to the new gateway instance.
+
+          Troubleshooting:
+          - Verify the security group allows inbound port 80
+          - Check network ACLs and routing
+          - Ensure the new instance is running
+          - If using private IP, confirm network connectivity from this host
+      when: port_check is failed
+
+    ############################################################################
+    # Step 4: Discover all volumes attached to the existing gateway instance
     ############################################################################
 
     - name: Get all volumes attached to old instance
@@ -355,7 +391,7 @@
 
 
     ############################################################################
-    # Step 3: Stop Old Gateway Instance
+    # Step 5: Stop Old Gateway Instance
     ############################################################################
 
     - name: Check old instance state
@@ -384,7 +420,7 @@
         msg: "Old gateway instance {{ old_instance_id }} is now stopped"
 
     ############################################################################
-    # Step 4: Detach All Volumes from Old Gateway Instance
+    # Step 6: Detach All Volumes from Old Gateway Instance
     ############################################################################
 
     - name: Detach all volumes from old gateway instance
@@ -414,7 +450,7 @@
           - "Volume IDs: {{ old_volumes.volumes | map(attribute='id') | list }}"
 
     ############################################################################
-    # Step 5: Verify New Gateway Instance is Running
+    # Step 7: Verify New Gateway Instance is Running
     ############################################################################
 
     - name: Check new instance state
@@ -436,7 +472,7 @@
         success_msg: "New instance {{ new_instance_id }} is running and ready for volume attachment"
 
     ############################################################################
-    # Step 6: Attach All Volumes to the new Gateway Instance
+    # Step 8: Attach All Volumes to the new Gateway Instance
     ############################################################################
 
     - name: Display volume attachment plan
@@ -599,7 +635,7 @@
         seconds: 30
 
     ############################################################################
-    # Step 7: Trigger Migration via URL
+    # Step 9: Update Gateway IP
     ############################################################################
 
     - name: Get current instance network info
@@ -629,7 +665,7 @@
           - "NEW IP (after restart): {{ new_gateway_ip }}"
 
     ############################################################################
-    # Step 9: Trigger Migration via URL
+    # Step 10: Trigger Migration via URL
     ############################################################################
 
     - name: Display migration URL being used
@@ -701,7 +737,7 @@
       when: not migration_successful
 
     ############################################################################
-    # Step 10: Confirm Migration Complete
+    # Step 11: Confirm Migration Complete
     ############################################################################
 
     - name: Confirm migration complete
@@ -776,7 +812,7 @@
       when: not migration_successful
 
     ############################################################################
-    # Step 11: Automatic Old Root Volume Detachment (when migration successful)
+    # Step 12: Automatic Old Root Volume Detachment (when migration successful)
     ############################################################################
 
     - name: Automatic old root volume detachment notification
@@ -927,7 +963,7 @@
       tags: detach_old_root
 
     ############################################################################
-    # Step 12: Check SMB Settings / Active Directory Domain Join Status
+    # Step 13: Check SMB Settings / Active Directory Domain Join Status
     ############################################################################
 
     - name: List all storage gateways
@@ -1004,7 +1040,7 @@
       tags: detach_old_root
 
     ############################################################################
-    # Step 13: Rejoin Active Directory Domain (if previously joined)
+    # Step 14: Rejoin Active Directory Domain (if previously joined)
     ############################################################################
 
     - name: Set AD joined flag

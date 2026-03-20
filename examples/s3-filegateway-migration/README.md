@@ -67,6 +67,12 @@ gateway_id = "sgw-12A3456B"
 # gateway_type  = "FILE_S3"      # FILE_S3 or CACHED (default: FILE_S3)
 # instance_type = "m7i.xlarge"   # New instance type (default: same as old gateway)
 # reuse_eip     = false          # Reattach existing Elastic IP (default: false)
+
+# Optional: Configure DNS on the new gateway at launch via admincli
+# user_data = <<-EOF
+#   #!/bin/bash
+#   sudo /usr/bin/admincli dns static --primary-dns 10.0.0.2 ens5
+# EOF
 ```
 
 All other configuration (VPC, subnet, AZ, security group, SSH key, root disk) is automatically discovered from the existing gateway instance.
@@ -259,6 +265,7 @@ Do not run `terraform destroy` after a successful migration, as it will terminat
 | instance\_type | Instance type for the new AL2023 gateway. If not specified, uses the same type as the old gateway. Recommended: m7i.xlarge, m7i.2xlarge, r7i.xlarge, etc. | `string` | `null` | no |
 | reuse\_eip | Reattach the existing Elastic IP from the old gateway to the new gateway | `bool` | `false` | no |
 | root\_block\_device | Root block device configuration of the new instance will match the old gateway's root disk configuration. | `map(any)` | `{}` | no |
+| user\_data | User data script for gateway network configuration via admincli (e.g., DNS). | `string` | `null` | no |
 
 ## Outputs
 

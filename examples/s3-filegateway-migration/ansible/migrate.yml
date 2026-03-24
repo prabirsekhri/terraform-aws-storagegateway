@@ -305,7 +305,7 @@
       debug:
         msg:
           - ""
-          - "NOTE: New instance has its own AL2023 root disk at /dev/xvda"
+          - "NOTE: New instance has its own root disk at /dev/xvda"
           - "      All old volumes will be attached as additional disks"
           - "=========================================="
 

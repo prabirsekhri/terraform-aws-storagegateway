@@ -6,16 +6,20 @@ This directory contains Ansible playbooks to automate the manual steps of the St
 
 The Ansible playbook automates the following steps after Terraform provisioning:
 
-1. ✅ **Stop old gateway instance**
-2. ✅ **Detach cache and root volumes** from old instance
-3. ✅ **Attach cache volumes** to new instance
-4. ✅ **Attach old root volume** temporarily to new instance
-5. ✅ **Start new instance**
-6. ✅ **Wait for gateway API** to be ready
-7. ✅ **Trigger migration** via HTTP API call
-8. ✅ **Stop new instance** after migration
-9. ✅ **Detach old root volume** from new instance
-10. ✅ **Start new instance** (final)
+1. ✅ **Discover old instance ID** from Gateway ID (if not provided)
+2. ✅ **Check CachePercentDirty** metric and warn if data hasn't been fully flushed
+3. ✅ **Verify port 80 connectivity** to the new gateway instance
+4. ✅ **Discover and classify volumes** (root vs cache) attached to the old instance
+5. ✅ **Stop old gateway instance**
+6. ✅ **Detach all volumes** from old instance
+7. ✅ **Verify new instance is running**
+8. ✅ **Attach cache volumes and old root volume** to the new instance
+9. ✅ **Update gateway IP** (refresh after any IP changes)
+10. ✅ **Trigger migration** via the gateway HTTP API
+11. ✅ **Confirm migration** complete
+12. ✅ **Detach old root volume**, stop/start new instance
+13. ✅ **Check SMB settings** and Active Directory domain join status
+14. ✅ **Rejoin Active Directory** domain (if previously joined)
 
 ## Prerequisites
 
@@ -140,53 +144,67 @@ ansible-playbook migrate.yml \
 
 ### Tasks Breakdown
 
-#### Phase 1: Stop Old Instance
-- Checks current state
-- Stops instance if running
-- Waits for stopped state
+#### Step 1: Discover Old Instance ID
+- Looks up the EC2 instance ID from the Gateway ID via the Storage Gateway API
+- Skipped if `old_instance_id` is provided via environment variable
 
-#### Phase 2: Detach Volumes
-- Discovers all attached volumes
-- Identifies root volume (/dev/sda1)
-- Identifies cache volumes (/dev/sdb, /dev/sdc, etc.)
-- Detaches all volumes
-- Waits for volumes to be available
+#### Step 2: Check Cache Dirty Percentage
+- Queries CloudWatch for the `CachePercentDirty` metric
+- Warns if data hasn't been fully flushed to S3
+- Prompts for confirmation if cache dirty is above 0%
 
-#### Phase 3: Attach Cache Volumes
-- Attaches each cache volume to new instance
-- Preserves original device names
-- Waits for attachment completion
+#### Step 3: Verify Port 80 Connectivity
+- Tests TCP connectivity to the new gateway instance on port 80
+- Fails early with troubleshooting steps if unreachable
+- Prevents wasted effort if the migration API won't be accessible
 
-#### Phase 4: Attach Root Volume (Temporary)
-- Attaches old root volume to new instance at /dev/sdf
-- This is required for the migration process
-- Will be detached later
+#### Step 4: Discover Volumes
+- Discovers all EBS volumes attached to the old instance
+- Classifies them as root (has AMI snapshot) or cache (no snapshot)
+- Saves volume configuration to a timestamped file
 
-#### Phase 5: Start New Instance
-- Starts new gateway instance
-- Waits for running state
-- Waits for instance checks to pass
+#### Step 5: Stop Old Gateway Instance
+- Checks current state and stops the old instance
+- Waits for stopped state confirmation
 
-#### Phase 6: Wait for Gateway API
-- Polls gateway HTTP endpoint
-- Retries up to 60 times (10 minutes)
-- Confirms gateway is ready
+#### Step 6: Detach All Volumes
+- Detaches all volumes (root + cache) from the old instance
+- Waits for each volume to reach 'available' state
 
-#### Phase 7: Trigger Migration
-- Calls migration URL: `http://<ip>/migrate?gatewayId=<id>`
-- Waits for response (up to 10 minutes)
-- Pauses 5 minutes for migration to complete
+#### Step 7: Verify New Instance is Running
+- Confirms the new AL2023 instance is in 'running' state
+- Fails if the instance is not running
 
-#### Phase 8: Stop Instance
-- Stops new instance to detach old root volume
+#### Step 8: Attach All Volumes
+- Attaches old root volume to `/dev/sdf`
+- Attaches cache volumes to `/dev/sdg`, `/dev/sdh`, etc.
+- Validates all cache disks are attached with correct count
 
-#### Phase 9: Detach Old Root Volume
-- Detaches old root volume from new instance
-- Waits for volume to be available
+#### Step 9: Update Gateway IP
+- Refreshes the gateway IP address (may change after restarts)
 
-#### Phase 10: Final Start
-- Starts new instance with only its own root volume
-- Migration is complete!
+#### Step 10: Trigger Migration
+- Calls `http://<ip>/migrate?gatewayId=<id>`
+- Validates the response for success or failure
+- Reports cache disk mismatch errors if detected
+
+#### Step 11: Confirm Migration Complete
+- Displays migration summary with volume configuration
+
+#### Step 12: Detach Old Root Volume
+- Stops the new instance
+- Detaches the old root volume (`/dev/sdf`)
+- Restarts the new instance
+- Displays final volume configuration
+
+#### Step 13: Check SMB / Active Directory Status
+- Retrieves SMB settings from the gateway
+- Reports AD domain join status
+
+#### Step 14: Rejoin Active Directory
+- If the gateway was previously joined to AD, prompts for credentials
+- Rejoins the gateway to the AD domain
+- Skipped if the gateway was not AD-joined
 
 ## Execution Time
 
@@ -272,10 +290,13 @@ cd .. && terraform output
 ## Idempotency
 
 Most tasks are idempotent and safe to re-run:
-- ✅ Stopping already-stopped instances (skipped)
-- ✅ Detaching already-detached volumes (skipped)
-- ✅ Attaching already-attached volumes (skipped)
-- ⚠️ Migration API call (may fail if already migrated)
+-  Stopping already-stopped instances (skipped)
+-  Detaching already-detached volumes (skipped)
+-  Attaching already-attached volumes (skipped)
+-  Port 80 connectivity check (safe to repeat)
+-  Cache dirty check (safe to repeat)
+-  Migration API call (may fail if already migrated)
+-  AD rejoin (may fail if already joined)
 
 ## Required IAM Permissions
 
@@ -293,7 +314,13 @@ The AWS credentials used must have these permissions:
         "ec2:StartInstances",
         "ec2:StopInstances",
         "ec2:AttachVolume",
-        "ec2:DetachVolume"
+        "ec2:DetachVolume",
+        "storagegateway:DescribeGatewayInformation",
+        "storagegateway:DescribeSMBSettings",
+        "storagegateway:ListGateways",
+        "storagegateway:JoinDomain",
+        "cloudwatch:GetMetricStatistics",
+        "sts:GetCallerIdentity"
       ],
       "Resource": "*"
     }
@@ -305,10 +332,11 @@ The AWS credentials used must have these permissions:
 
 ```
 ansible/
-├── migrate.yml              # Main migration playbook
+├── migrate.yml              # Main migration playbook (14 steps)
 ├── ansible.cfg              # Ansible configuration
 ├── requirements.yml         # Required Ansible collections
 ├── run-migration.sh         # Convenience runner script
+├── logs/                    # Timestamped migration logs
 ├── inventory/
 │   └── localhost.yml        # Localhost inventory
 └── README.md               # This file

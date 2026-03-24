@@ -3,8 +3,6 @@
 ##########################
 
 locals {
-  vpc_security_group_ids = var.create_security_group ? [aws_security_group.ec2_sg[0].id] : [var.security_group_id]
-
   # Map gateway types to SSM parameter paths (AL2023-based AMIs)
   gateway_type_ssm_paths = {
     "FILE_S3" = "/aws/service/storagegateway/ami/FILE_S3/latest"
@@ -22,7 +20,7 @@ resource "aws_instance" "ec2_sgw" {
   #checkov:skip=CKV_AWS_126:Detailed monitoring is optional for Storage Gateway EC2 instances
   #checkov:skip=CKV2_AWS_41:IAM role attachment is optional - users can attach roles via instance profile variable if needed
   ami                    = data.aws_ssm_parameter.sgw_ami.value
-  vpc_security_group_ids = local.vpc_security_group_ids
+  vpc_security_group_ids = var.create_security_group ? aws_security_group.ec2_sg[*].id : [var.security_group_id]
   subnet_id              = var.subnet_id
   instance_type          = var.instance_type
   key_name               = var.ssh_key_name
@@ -59,12 +57,9 @@ resource "aws_instance" "ec2_sgw" {
 }
 
 resource "aws_eip" "ip" {
-  domain = "vpc"
-}
-
-resource "aws_eip_association" "eip_assoc" {
-  instance_id   = aws_instance.ec2_sgw.id
-  allocation_id = aws_eip.ip.id
+  count    = var.create_eip ? 1 : 0
+  domain   = "vpc"
+  instance = aws_instance.ec2_sgw.id
 }
 
 resource "aws_volume_attachment" "ebs_volume" {

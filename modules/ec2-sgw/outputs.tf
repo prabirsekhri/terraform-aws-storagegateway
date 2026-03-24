@@ -1,12 +1,18 @@
 output "public_ip" {
-  value       = aws_eip.ip.public_ip
-  description = "The Public IP address of the created Elastic IP."
+  value       = var.create_eip ? aws_eip.ip[0].public_ip : null
+  description = "The Public IP address of the Elastic IP. Null when create_eip is false."
   sensitive   = true
 }
 
 output "private_ip" {
   value       = aws_instance.ec2_sgw.private_ip
-  description = "The Private IP address of the Storage Gateway on EC2"
+  description = "The Private IP address of the Storage Gateway EC2 instance."
+}
+
+output "activation_ip" {
+  value       = var.create_eip ? aws_eip.ip[0].public_ip : aws_instance.ec2_sgw.private_ip
+  description = "The IP address to use for gateway activation."
+  sensitive   = true
 }
 
 output "ami_id" {

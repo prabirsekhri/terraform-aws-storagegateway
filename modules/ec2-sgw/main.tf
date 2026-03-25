@@ -3,7 +3,6 @@
 ##########################
 
 locals {
-
   # Map gateway types to SSM parameter paths (AL2023-based AMIs)
   gateway_type_ssm_paths = {
     "FILE_S3" = "/aws/service/storagegateway/ami/FILE_S3/latest"
@@ -60,8 +59,8 @@ resource "aws_instance" "ec2_sgw" {
 }
 
 resource "aws_eip" "ip" {
-  count  = var.create_eip ? 1 : 0
-  domain = "vpc"
+  count    = var.create_eip ? 1 : 0
+  domain   = "vpc"
   instance = aws_instance.ec2_sgw.id
 }
 

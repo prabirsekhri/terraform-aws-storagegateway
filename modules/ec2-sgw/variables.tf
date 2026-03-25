@@ -135,9 +135,9 @@ variable "create_cache_volume" {
 }
 
 variable "create_eip" {
+  description = "Create an Elastic IP for public gateway activation. Set to false for private VPC activation."
   type        = bool
-  description = "Create and associate an Elastic IP. Set to false for if eip is not a requirement."
-  default     = false
+  default     = true
 }
 
 variable "user_data" {

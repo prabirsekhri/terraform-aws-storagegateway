@@ -65,13 +65,16 @@ export NEW_GATEWAY_PUBLIC_IP=$(terraform output -raw new_gateway_public_ip 2>/de
 export NEW_GATEWAY_PRIVATE_IP=$(terraform output -raw new_gateway_private_ip 2>/dev/null || echo "")
 export AWS_REGION=$(terraform output -raw aws_region 2>/dev/null || echo "us-east-1")
 
-# Default to private IP, use public IP only if explicitly available
-export NEW_GATEWAY_IP="$NEW_GATEWAY_PRIVATE_IP"
-if [ -n "$NEW_GATEWAY_PUBLIC_IP" ] && [ "$NEW_GATEWAY_PUBLIC_IP" != "null" ]; then
-    export NEW_GATEWAY_IP="$NEW_GATEWAY_PUBLIC_IP"
-    echo -e "${YELLOW}Using public IP for migration${NC}"
-else
+# Default to private IP, use public IP only as fallback
+if [ -n "$NEW_GATEWAY_PRIVATE_IP" ] && [ "$NEW_GATEWAY_PRIVATE_IP" != "null" ]; then
+    export NEW_GATEWAY_IP="$NEW_GATEWAY_PRIVATE_IP"
     echo -e "${GREEN}Using private IP for migration${NC}"
+elif [ -n "$NEW_GATEWAY_PUBLIC_IP" ] && [ "$NEW_GATEWAY_PUBLIC_IP" != "null" ]; then
+    export NEW_GATEWAY_IP="$NEW_GATEWAY_PUBLIC_IP"
+    echo -e "${YELLOW}Private IP not available, using public IP for migration${NC}"
+else
+    echo -e "${RED}Error: No IP address available for the new gateway${NC}"
+    exit 1
 fi
 
 cd ansible

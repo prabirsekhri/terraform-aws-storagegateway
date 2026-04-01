@@ -25,16 +25,16 @@ The Ansible playbook handles the actual migration process: stopping the old inst
 
 Before running this example, ensure:
 
-1. **Gateway is updated to the latest version**
+1. **Stop all applications writing to the gateway**
+   - Ensure no active write operations
+
+2. **Gateway is updated to the latest version**
    - Check in AWS Console: Storage Gateway > Gateways > Select gateway > Update Now
 
-2. **CachePercentDirty metric is 0**
+3. **CachePercentDirty metric is 0**
    - Check in AWS Console: Storage Gateway > Gateways > Select gateway > Monitoring tab
    - Wait for all cached data to be uploaded to S3
    - The Ansible playbook also checks this metric and warns you before proceeding
-
-3. **Stop all applications writing to the gateway**
-   - Ensure no active write operations
 
 4. **AWS CLI and `jq` installed**
    - The `get-gateway-instance.sh` helper script uses both to discover the EC2 instance from the gateway ID
@@ -77,6 +77,12 @@ gateway_id = "sgw-12A3456B"
 #   sudo /usr/bin/admincli dns static --primary-dns 10.0.0.2 ens5
 # EOF
 ```
+
+## User Data (Network Configuration)
+
+The optional `user_data` variable allows you to run a script at instance launch via cloud-init to configure network settings using the gateway's built-in `admincli` tool. This is particularly useful for AD-authenticated/SMB gateways where the AD DNS server must be configured for the domain join to succeed during migration.
+
+The network interface name depends on the instance platform: Nitro-based instances use `ens5`, Xen-based instances use `eth0`. The user-data is automatically base64-encoded by the module.
 
 All other configuration (VPC, subnet, AZ, security group, SSH key, root disk) is automatically discovered from the existing gateway instance.
 

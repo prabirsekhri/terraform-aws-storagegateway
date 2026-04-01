@@ -53,7 +53,7 @@ output "aws_region" {
 
 output "migration_url" {
   description = "URL to initiate the gateway migration process"
-  value       = "http://${module.new_sgw.instance_public_ip}/migrate?gatewayId=${var.gateway_id}"
+  value       = "http://${module.new_sgw.private_ip}/migrate?gatewayId=${var.gateway_id}"
 }
 
 output "next_steps" {

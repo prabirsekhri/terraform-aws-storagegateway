@@ -167,14 +167,33 @@
     # Step 3: Verify Port 80 Connectivity to New Gateway Instance
     ############################################################################
 
-    - name: Check port 80 connectivity to new gateway instance
+    - name: Check port 80 connectivity to new gateway (public IP)
       wait_for:
         host: "{{ new_gateway_ip }}"
         port: 80
         timeout: 30
         state: started
-      register: port_check
+      register: port_check_public
       ignore_errors: true
+
+    - name: Fallback to private IP for port 80 check
+      wait_for:
+        host: "{{ lookup('env', 'NEW_GATEWAY_PRIVATE_IP') | default(new_gateway_ip, true) }}"
+        port: 80
+        timeout: 30
+        state: started
+      register: port_check_private
+      ignore_errors: true
+      when: port_check_public is failed
+
+    - name: Set effective port check result
+      set_fact:
+        port_check: "{{ port_check_private if (port_check_public is failed and port_check_private is defined) else port_check_public }}"
+
+    - name: Update gateway IP to private if public was unreachable
+      set_fact:
+        new_gateway_ip: "{{ lookup('env', 'NEW_GATEWAY_PRIVATE_IP') | default(new_gateway_ip, true) }}"
+      when: port_check_public is failed and port_check_private is defined and port_check_private is succeeded
 
     - name: Display port 80 connectivity result
       debug:

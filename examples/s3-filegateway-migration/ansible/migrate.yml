@@ -34,14 +34,13 @@
         instance_id_provided: "{{ old_instance_id is defined and old_instance_id != '' }}"
 
     - name: Get AWS account ID
-      amazon.aws.aws_caller_info:
-      register: caller_info
-      when: not instance_id_provided
+      command: aws sts get-caller-identity --query Account --output text --region {{ aws_region }}
+      register: aws_account_id_result
+      changed_when: false
 
     - name: Construct gateway ARN
       set_fact:
-        gateway_arn: "arn:aws:storagegateway:{{ aws_region }}:{{ caller_info.account }}:gateway/{{ gateway_id }}"
-      when: not instance_id_provided
+        gateway_arn: "arn:aws:storagegateway:{{ aws_region }}:{{ aws_account_id_result.stdout }}:gateway/{{ gateway_id }}"
 
     - name: Fetch gateway information from AWS Storage Gateway API
       command: >
@@ -949,12 +948,6 @@
     ############################################################################
     # Step 13: Check SMB Settings / Active Directory Domain Join Status
     ############################################################################
-
-    - name: Construct gateway ARN
-      set_fact:
-        gateway_arn: "arn:aws:storagegateway:{{ aws_region }}:{{ caller_info.account }}:gateway/{{ gateway_id }}"
-      when: should_detach_old_root
-      tags: detach_old_root
 
     - name: Display gateway info
       debug:

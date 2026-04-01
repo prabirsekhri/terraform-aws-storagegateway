@@ -91,8 +91,8 @@
         --namespace AWS/StorageGateway
         --metric-name CachePercentDirty
         --dimensions Name=GatewayId,Value={{ gateway_id }}
-        --start-time {{ (now(utc=true) - timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%S') }}
-        --end-time {{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%S') }}
+        --start-time {{ lookup('pipe', 'python3 -c "from datetime import datetime, timedelta; print((datetime.utcnow() - timedelta(minutes=10)).strftime(\'%Y-%m-%dT%H:%M:%S\'))"') }}
+        --end-time {{ lookup('pipe', 'python3 -c "from datetime import datetime; print(datetime.utcnow().strftime(\'%Y-%m-%dT%H:%M:%S\'))"') }}
         --period 300
         --statistics Average
         --region {{ aws_region }}

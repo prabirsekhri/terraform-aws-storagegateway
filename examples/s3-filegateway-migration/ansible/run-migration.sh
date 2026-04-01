@@ -12,6 +12,17 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Parse arguments
+AUTO_APPROVE=false
+for arg in "$@"; do
+    case $arg in
+        --yes|-y)
+            AUTO_APPROVE=true
+            shift
+            ;;
+    esac
+done
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Storage Gateway Migration Runner${NC}"
 echo -e "${GREEN}========================================${NC}"
@@ -114,11 +125,15 @@ echo -e "${YELLOW}This process will take approximately 10-15 minutes.${NC}"
 echo -e "${YELLOW}The gateway will be offline during this time.${NC}"
 echo ""
 
-read -p "Do you want to proceed? (yes/no): " -r
-echo
-if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-    echo -e "${YELLOW}Migration cancelled.${NC}"
-    exit 0
+if [ "$AUTO_APPROVE" = false ]; then
+    read -p "Do you want to proceed? (yes/no): " -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        echo -e "${YELLOW}Migration cancelled.${NC}"
+        exit 0
+    fi
+else
+    echo -e "${GREEN}Auto-approved via --yes flag${NC}"
 fi
 
 echo -e "${GREEN}========================================${NC}"

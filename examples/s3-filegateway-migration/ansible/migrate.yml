@@ -138,46 +138,18 @@
           - "Proceeding with migration..."
       when: cache_dirty_metric.rc != 0 or (cache_dirty_data.Datapoints | default([]) | length == 0)
 
-    - name: Pause if cache dirty percentage is high
-      pause:
-        prompt: |2
+    - name: Fail if cache dirty percentage is too high
+      fail:
+        msg: |
+          ABORTING: Cache dirty is {{ cache_dirty_percent.Average | float | round(1) }}% (above 5%).
+          This means data has NOT been uploaded to S3. Proceeding may result in DATA LOSS.
+          Wait for cache to flush and re-run when CachePercentDirty is 0%.
+      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0 and cache_dirty_percent.Average | default(0) | float > 5
 
-          ==========================================
-          WARNING: Cache Dirty Percentage Check
-          ==========================================
-
-          Current Cache Dirty: {{ cache_dirty_percent.Average | default('N/A') }}%
-
-          {% if cache_dirty_percent.Average | default(0) | float > 5 %}
-          ⚠️  HIGH RISK: Cache dirty is above 5%
-
-          This means {{ cache_dirty_percent.Average | float | round(1) }}% of cached data has NOT been uploaded to S3.
-          Proceeding with migration now may result in DATA LOSS.
-
-          STRONGLY RECOMMENDED:
-          1. Press Ctrl+C to abort
-          2. Wait for cache to flush (monitor CachePercentDirty in CloudWatch)
-          3. Re-run migration when cache dirty is 0%
-
-          Or press ENTER to continue anyway (NOT RECOMMENDED - DATA LOSS RISK)
-
-          {% elif cache_dirty_percent.Average | default(0) | float > 0 %}
-          ⚠️  LOW RISK: Cache dirty is {{ cache_dirty_percent.Average | float | round(1) }}%
-
-          A small amount of data has not been uploaded to S3 yet.
-
-          RECOMMENDED:
-          1. Press Ctrl+C to abort and wait a few minutes
-          2. Re-run migration when cache dirty is 0%
-
-          Or press ENTER to continue (low risk but not ideal)
-
-          {% else %}
-          ✓ Cache is clean (0% dirty) - safe to proceed with migration
-
-          Press ENTER to continue...
-          {% endif %}
-      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
+    - name: Warn if cache dirty percentage is low
+      debug:
+        msg: "Cache dirty is {{ cache_dirty_percent.Average | default(0) | float | round(1) }}% — proceeding with migration"
+      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0 and cache_dirty_percent.Average | default(0) | float <= 5
 
     ############################################################################
     # Step 3: Verify Port 80 Connectivity to New Gateway Instance
@@ -226,11 +198,36 @@
           attachment.instance-id: "{{ old_instance_id }}"
       register: old_volumes
 
-    - name: Validate volumes were found
+    - name: Check if volumes are already on the new instance (partial failure recovery)
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          attachment.instance-id: "{{ new_instance_id }}"
+      register: new_instance_volumes
+      when: old_volumes.volumes | length == 0
+
+    - name: Set recovery mode if volumes already moved to new instance
+      set_fact:
+        recovery_mode: "{{ old_volumes.volumes | length == 0 and (new_instance_volumes.volumes | default([]) | length > 1) }}"
+
+    - name: Display recovery mode status
+      debug:
+        msg:
+          - "RECOVERY MODE: Volumes already attached to new instance {{ new_instance_id }}"
+          - "Found {{ new_instance_volumes.volumes | length }} volume(s) on new instance"
+          - "Skipping detach/attach steps and proceeding to migration trigger"
+      when: recovery_mode | bool
+
+    - name: Use volumes from new instance in recovery mode
+      set_fact:
+        old_volumes: "{{ new_instance_volumes }}"
+      when: recovery_mode | bool
+
+    - name: Validate volumes were found on either instance
       assert:
         that:
           - old_volumes.volumes | length > 0
-        fail_msg: "No volumes found attached to instance {{ old_instance_id }}"
+        fail_msg: "No volumes found attached to instance {{ old_instance_id }} or {{ new_instance_id }}. Check volume states in AWS Console."
         success_msg: "Found {{ old_volumes.volumes | length }} volume(s) to migrate"
 
     - name: Separate root disk and cache disks
@@ -362,32 +359,17 @@
       loop_control:
         extended: true
 
-    - name: Pause for user confirmation
-      pause:
-        prompt: |2
-
-          ==========================================
-          VOLUME CONFIGURATION DISCOVERED
-          ==========================================
-
-          New Instance Root: /dev/xvda (AL2023 - created by Terraform)
-
-          OLD GATEWAY ROOT DISK:
-            {{ root_disk.id }} ({{ root_disk.size }} GB) → /dev/sdf
-            Original: {{ root_disk.attachment_set[0].device }}
-            Snapshot: {{ root_disk.snapshot_id }}
-
-          OLD GATEWAY CACHE DISKS: {{ cache_disks | length }} disk(s)
-          (See cache disk details above)
-
-          MIGRATION PROCESS:
-          1. Stop old instance: {{ old_instance_id }}
-          2. Detach all volumes from old instance
-          3. Attach all volumes to running new instance: {{ new_instance_id }}
-          4. Trigger migration via API
-          5. Migration complete!
-
-          Press ENTER to continue or Ctrl+C to abort...
+    - name: Display migration plan
+      debug:
+        msg:
+          - "=========================================="
+          - "VOLUME CONFIGURATION DISCOVERED"
+          - "=========================================="
+          - "New Instance Root: /dev/xvda (created by Terraform)"
+          - "Old Root: {{ root_disk.id }} ({{ root_disk.size }} GB) → /dev/sdf"
+          - "Cache Disks: {{ cache_disks | length }} disk(s) → /dev/sdg+"
+          - "Proceeding with migration..."
+          - "=========================================="
 
 
     ############################################################################
@@ -400,10 +382,12 @@
           - "{{ old_instance_id }}"
         region: "{{ aws_region }}"
       register: old_instance_info
+      when: not recovery_mode | bool
 
     - name: Display old instance state
       debug:
         msg: "Old instance state: {{ old_instance_info.instances[0].state.name }}"
+      when: not recovery_mode | bool
 
     - name: Stop old gateway instance
       amazon.aws.ec2_instance:
@@ -413,11 +397,12 @@
         region: "{{ aws_region }}"
         wait: true
         wait_timeout: 300
-      when: old_instance_info.instances[0].state.name != 'stopped'
+      when: not recovery_mode | bool and old_instance_info.instances[0].state.name != 'stopped'
 
     - name: Confirm old instance is stopped
       debug:
         msg: "Old gateway instance {{ old_instance_id }} is now stopped"
+      when: not recovery_mode | bool
 
     ############################################################################
     # Step 6: Detach All Volumes from Old Gateway Instance
@@ -431,6 +416,7 @@
         state: present
       loop: "{{ old_volumes.volumes }}"
       register: detach_result
+      when: not recovery_mode | bool
 
     - name: Wait for all volumes to be available
       amazon.aws.ec2_vol_info:
@@ -442,12 +428,14 @@
       retries: 30
       delay: 10
       loop: "{{ old_volumes.volumes }}"
+      when: not recovery_mode | bool
 
     - name: Confirm all volumes detached
       debug:
         msg:
           - "All volumes successfully detached from old instance"
           - "Volume IDs: {{ old_volumes.volumes | map(attribute='id') | list }}"
+      when: not recovery_mode | bool
 
     ############################################################################
     # Step 7: Verify New Gateway Instance is Running
@@ -501,6 +489,7 @@
       retries: 3
       delay: 5
       until: attach_root_result is succeeded
+      when: not recovery_mode | bool
 
     - name: Attach cache disks to new instance
       amazon.aws.ec2_vol:
@@ -518,6 +507,7 @@
       loop_control:
         extended: true
       failed_when: false
+      when: not recovery_mode | bool
 
     - name: Check for cache disk attachment failures
       fail:
@@ -653,9 +643,9 @@
           - "Private IP: {{ new_instance_info_updated.instances[0].private_ip_address }}"
           - "State: {{ new_instance_info_updated.instances[0].state.name }}"
 
-    - name: Update gateway IP variable with new public IP
+    - name: Update gateway IP variable with current IP
       set_fact:
-        new_gateway_ip: "{{ new_instance_info_updated.instances[0].public_ip_address }}"
+        new_gateway_ip: "{{ new_instance_info_updated.instances[0].public_ip_address | default(new_instance_info_updated.instances[0].private_ip_address) }}"
         cacheable: false
 
     - name: Display updated gateway IP
@@ -832,25 +822,6 @@
           - ""
           - "=========================================="
       when: migration_successful | default(false)
-      tags: detach_old_root
-
-    - name: Pause for old root volume detachment confirmation
-      pause:
-        prompt: |2
-
-          ==========================================
-          DETACH OLD ROOT VOLUME
-          ==========================================
-
-          You have requested to detach the old root volume from the new gateway.
-
-          Current Configuration:
-            - New AL2023 root: /dev/xvda ({{ new_instance_id }})
-            - Old root volume: /dev/sdf ({{ root_disk.id }})
-            - Cache volumes: {{ cache_disks | length }} disk(s) at /dev/sdg+
-
-          Press ENTER to continue or Ctrl+C to abort...
-      when: should_detach_old_root
       tags: detach_old_root
 
     - name: Stop new instance for volume detachment

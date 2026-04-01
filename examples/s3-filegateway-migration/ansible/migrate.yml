@@ -937,54 +937,29 @@
     # Step 13: Check SMB Settings / Active Directory Domain Join Status
     ############################################################################
 
-    - name: List all storage gateways
-      command: >
-        aws storagegateway list-gateways
-        --region "{{ aws_region }}"
-        --output json
-      register: list_gateways_result
-      changed_when: false
+    - name: Construct gateway ARN
+      set_fact:
+        gateway_arn: "arn:aws:storagegateway:{{ aws_region }}:{{ caller_info.account }}:gateway/{{ gateway_id }}"
       when: should_detach_old_root
       tags: detach_old_root
 
-    - name: Parse gateway list and find gateway by instance ID
-      set_fact:
-        discovered_gateways: "{{ list_gateways_result.stdout | from_json }}"
-      when: should_detach_old_root
-      tags: detach_old_root
-
-    - name: Discover gateway ID from instance
-      set_fact:
-        discovered_gateway_id: "{{ item.GatewayId }}"
-        discovered_gateway_arn: "{{ item.GatewayARN }}"
-      loop: "{{ discovered_gateways.Gateways }}"
-      when: should_detach_old_root and item.Ec2InstanceId | default('') == new_instance_id
-      tags: detach_old_root
-
-    - name: Fall back to env var gateway ID if discovery failed
-      set_fact:
-        discovered_gateway_id: "{{ gateway_id }}"
-        discovered_gateway_arn: "arn:aws:storagegateway:{{ aws_region }}:{{ caller_info.account | default('') }}:gateway/{{ gateway_id }}"
-      when: should_detach_old_root and discovered_gateway_id is not defined and gateway_id | default('') != ''
-      tags: detach_old_root
-
-    - name: Display discovered gateway info
+    - name: Display gateway info
       debug:
         msg:
-          - "Discovered Gateway ID: {{ discovered_gateway_id | default('NOT FOUND') }}"
-          - "Discovered Gateway ARN: {{ discovered_gateway_arn | default('NOT FOUND') }}"
+          - "Gateway ID: {{ gateway_id }}"
+          - "Gateway ARN: {{ gateway_arn }}"
       when: should_detach_old_root
       tags: detach_old_root
 
     - name: Retrieve SMB settings for gateway
       command: >
         aws storagegateway describe-smb-settings
-        --gateway-arn "{{ discovered_gateway_arn }}"
+        --gateway-arn "{{ gateway_arn }}"
         --region "{{ aws_region }}"
         --output json
       register: smb_settings_result
       changed_when: false
-      when: should_detach_old_root and discovered_gateway_arn is defined
+      when: should_detach_old_root
       tags: detach_old_root
 
     - name: Parse SMB settings response
@@ -999,8 +974,8 @@
           - "=========================================="
           - "SMB SETTINGS / ACTIVE DIRECTORY STATUS"
           - "=========================================="
-          - "Gateway ID: {{ discovered_gateway_id }}"
-          - "Gateway ARN: {{ discovered_gateway_arn }}"
+          - "Gateway ID: {{ gateway_id }}"
+          - "Gateway ARN: {{ gateway_arn }}"
           - "AD Domain Joined: {{ 'Yes' if smb_settings.ActiveDirectoryStatus | default('') in ['JOINED', 'ACCESS_DENIED'] else 'No' }}"
           - "AD Status: {{ smb_settings.ActiveDirectoryStatus | default('NOT_CONFIGURED') }}"
           - "Domain Name: {{ smb_settings.DomainName | default('N/A') }}"
@@ -1057,7 +1032,7 @@
     - name: Rejoin gateway to Active Directory domain
       command: >
         aws storagegateway join-domain
-        --gateway-arn "{{ discovered_gateway_arn }}"
+        --gateway-arn "{{ gateway_arn }}"
         --domain-name "{{ ad_domain_input.user_input }}"
         --user-name "{{ ad_username_input.user_input }}"
         --password "{{ ad_password_input.user_input }}"
@@ -1091,7 +1066,7 @@
           - "=========================================="
           - "ACTIVE DIRECTORY REJOIN RESULT"
           - "=========================================="
-          - "Gateway ID: {{ discovered_gateway_id }}"
+          - "Gateway ID: {{ gateway_id }}"
           - "Domain: {{ ad_domain_input.user_input }}"
           - "Status: {{ 'SUCCESS' if ad_join_response.ActiveDirectoryStatus | default('') == 'JOINED' else 'FAILED - ' + ad_join_response.ActiveDirectoryStatus |
             default('UNKNOWN') }}"

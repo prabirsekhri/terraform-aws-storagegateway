@@ -85,14 +85,27 @@
     # Step 2: Check Cache Dirty Percentage
     ############################################################################
 
+    - name: Calculate CloudWatch time range
+      command: >
+        python3 -c "from datetime import datetime, timedelta; import json;
+        now=datetime.utcnow();
+        print(json.dumps({'start': (now - timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%S'), 'end': now.strftime('%Y-%m-%dT%H:%M:%S')}))"
+      register: cw_time_range_raw
+      changed_when: false
+
+    - name: Set CloudWatch time range facts
+      set_fact:
+        cw_start_time: "{{ (cw_time_range_raw.stdout | from_json).start }}"
+        cw_end_time: "{{ (cw_time_range_raw.stdout | from_json).end }}"
+
     - name: Get cache dirty percentage metric from CloudWatch
       command: >
         aws cloudwatch get-metric-statistics
         --namespace AWS/StorageGateway
         --metric-name CachePercentDirty
         --dimensions Name=GatewayId,Value={{ gateway_id }}
-        --start-time {{ lookup('pipe', 'python3 -c "from datetime import datetime, timedelta; print((datetime.utcnow() - timedelta(minutes=10)).strftime(\'%Y-%m-%dT%H:%M:%S\'))"') }}
-        --end-time {{ lookup('pipe', 'python3 -c "from datetime import datetime; print(datetime.utcnow().strftime(\'%Y-%m-%dT%H:%M:%S\'))"') }}
+        --start-time {{ cw_start_time }}
+        --end-time {{ cw_end_time }}
         --period 300
         --statistics Average
         --region {{ aws_region }}

@@ -131,7 +131,7 @@ variable "cache_block_device" {
 variable "create_cache_volume" {
   type        = bool
   description = "Create a new cache EBS volume. Set to false for migration scenarios."
-  default     = false
+  default     = true
 }
 
 variable "create_eip" {

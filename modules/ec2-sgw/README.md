@@ -100,7 +100,7 @@ No modules.
 | <a name="input_vpc_id"></a> [vpc\_id](#input\_vpc\_id) | The VPC ID in which the Storage Gateway security group will be created in | `string` | n/a | yes |
 | <a name="input_availability_zone"></a> [availability\_zone](#input\_availability\_zone) | Availability zone for the Gateway EC2 Instance. If not specified, will be determined by the subnet. | `string` | `null` | no |
 | <a name="input_cache_block_device"></a> [cache\_block\_device](#input\_cache\_block\_device) | Customize details about the additional block device of the instance. See Block Devices in README.md for details | `map(any)` | <pre>{<br/>  "disk_size": 150,<br/>  "kms_key_id": null,<br/>  "volume_type": "gp3"<br/>}</pre> | no |
-| <a name="input_create_cache_volume"></a> [create\_cache\_volume](#input\_create\_cache\_volume) | Create a new cache EBS volume. Set to false for migration scenarios. | `bool` | `false` | no |
+| <a name="input_create_cache_volume"></a> [create\_cache\_volume](#input\_create\_cache\_volume) | Create a new cache EBS volume. Set to false for migration scenarios. | `bool` | `true` | no |
 | <a name="input_create_eip"></a> [create\_eip](#input\_create\_eip) | Create an Elastic IP for public gateway activation. Set to false for private VPC activation. | `bool` | `true` | no |
 | <a name="input_create_security_group"></a> [create\_security\_group](#input\_create\_security\_group) | Create a Security Group for the EC2 Storage Gateway. If create\_security\_group=false, provide a valid security\_group\_id | `bool` | `false` | no |
 | <a name="input_egress_cidr_blocks"></a> [egress\_cidr\_blocks](#input\_egress\_cidr\_blocks) | The CIDR blocks for Gateway activation. Defaults to 0.0.0.0/0 | `string` | `"0.0.0.0/0"` | no |

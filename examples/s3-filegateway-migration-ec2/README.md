@@ -81,9 +81,7 @@ Before running this example, ensure:
 
 ## Usage
 
-### Phase 1: Infrastructure Provisioning (Terraform)
-
-#### Step 1: Configure Variables
+### Step 1: Configure Variables
 
 At minimum, you only need to provide the `gateway_id`. Copy the example tfvars file and update:
 
@@ -109,7 +107,7 @@ gateway_id = "sgw-12A3456B"
 # EOF
 ```
 
-#### Step 1a: User Data for Network Configuration
+### Step 1a: User Data for Network Configuration
 
 The optional `user_data` variable allows you to run a script at instance launch via cloud-init to configure network settings using the gateway's built-in `admincli` tool. This is particularly useful for AD-authenticated/SMB gateways where the AD DNS server must be configured for the domain join to succeed during migration.
 
@@ -117,7 +115,7 @@ The network interface name depends on the instance platform: Nitro-based instanc
 
 All other configuration (VPC, subnet, AZ, security group, SSH key, root disk) is automatically discovered from the existing gateway instance.
 
-#### Step 2: Initialize and Plan
+### Step 2: Initialize and Plan
 
 ```bash
 terraform init
@@ -130,7 +128,7 @@ Review the plan to ensure:
 - The existing security group from the old instance will be reused
 - No new cache volume or EIP will be created (volumes are migrated from the old instance)
 
-#### Step 3: Apply Infrastructure
+### Step 3: Apply Infrastructure
 
 ```bash
 terraform apply
@@ -152,7 +150,7 @@ This provisions:
   security_group_id     = tolist(data.aws_instance.old_sgw.vpc_security_group_ids)[0]
 ```
 
-### Phase 2: Migration Execution
+### Step 4: Migration Execution
 
 After Terraform completes, the new Gateway instance is running but the migration hasn't happened yet. Phase 2 moves the volumes and triggers the actual migration.
 

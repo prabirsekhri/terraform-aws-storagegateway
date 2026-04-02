@@ -1,13 +1,13 @@
 # EC2 File Gateway Migration 
 
-Example demonstrates how to migrate an existing EC2-based S3 File Gateway to a new instance — whether your data and performance needs grow or  upgrade to a newer host platform (e.g., AL2 to AL2023), refresh underlying hardware. The migration procedure preserves your cache disks and Gateway ID by following [Method 1](https://docs.aws.amazon.com/filegateway/latest/files3/migrate-data.html) from the File Gateway documentation.
+Example demonstrates how to migrate an existing EC2-based S3 File Gateway to a new instance — whether your data and performance needs grow, you upgrade to a newer host platform (e.g., AL2 to AL2023), or refresh underlying hardware. The migration procedure preserves your cache disks and Gateway ID by following [Method 1](https://docs.aws.amazon.com/filegateway/latest/files3/migrate-data.html) from the File Gateway documentation.
 
 
 ## Overview
 
 This migration method:
 - Preserves cache disk data (useful for large caches or read intensive applications)
-- Maintains the same Gateway congiguration (preserving the ateway and File share IDs)
+- Maintains the same Gateway configuration (preserving the Gateway and File share IDs)
 - Allows specifying instance type for the new gateway
 - Requires 1-2 hours of downtime
 
@@ -70,7 +70,7 @@ gateway_id = "sgw-12A3456B"
 # instance_type = "m7i.xlarge"   # New instance type (default: same as old gateway)
 # reuse_eip     = false          # Reattach existing Elastic IP (default: false)
 
-# Optional: Configure DNS on the new gateway at launch via admincli. For AD authenticated/SMB Gateways this user-data scripts help configure the AD DNS server for the Domain join to succeed in the migration porcees. 
+# Optional: Configure DNS on the new gateway at launch via admincli. For AD authenticated/SMB Gateways this user-data scripts help configure the AD DNS server for the Domain join to succeed in the migration process. 
 # Sample user-data script to configure DNS server
 # user_data = <<-EOF
 #   #!/bin/bash

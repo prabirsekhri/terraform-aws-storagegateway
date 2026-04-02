@@ -1,7 +1,7 @@
 <!-- BEGIN_TF_DOCS -->
 # AWS EC2 Storage Gateway Terraform sub-module
 
-Deployes a Storage Gateway on EC2 along with cache disk.
+Deploys a Storage Gateway on EC2 along with cache disk.
 
 For an end to end example on VMware, refer to the [s3-nfs-filegateway-ec2](../../examples/s3-nfs-filegateway-ec2/) example.
 

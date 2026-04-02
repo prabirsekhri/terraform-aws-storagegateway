@@ -31,12 +31,6 @@ variable "instance_type" {
   default     = null
 }
 
-variable "reuse_eip" {
-  type        = bool
-  description = "Reattach the existing Elastic IP from the old gateway to the new gateway"
-  default     = false
-}
-
 variable "user_data" {
   type        = string
   description = "User data script for gateway network configuration via admincli (e.g., DNS)"

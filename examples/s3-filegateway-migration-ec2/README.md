@@ -17,9 +17,40 @@ The migration is split into two phases:
 
 Terraform deploys the latest version of the gateway EC2 instance alongside the existing gateway. The only required input is `gateway_id` (e.g., `sgw-12A3456B`). A helper script (`get-gateway-instance.sh`) uses the Gateway ID to look up the underlying EC2 instance via the Storage Gateway API, and Terraform then pulls all the networking and configuration details — VPC, subnet, AZ, security group, SSH key, and root disk settings — directly from that instance. Terraform does not touch the old instance or its volumes — it only creates the new instance and outputs the information needed for Phase 2.
 
+**Phase 1 outputs (Terraform):**
+
+| Output | Description |
+|--------|-------------|
+| `migration_summary` | Combined summary: gateway ID, old/new instance IDs, instance types, root disk sizes, VPC/subnet/AZ, and cache volume IDs |
+| `new_gateway_instance_id` | EC2 instance ID of the new AL2023 gateway |
+| `new_gateway_private_ip` | Private IP of the new gateway (used by the Ansible playbook to trigger migration) |
+| `new_gateway_public_ip` | Public IP of the new gateway (sensitive; only present if an EIP is attached) |
+| `old_instance_id` | EC2 instance ID of the old gateway (discovered from `gateway_id`) |
+| `gateway_id` | The Storage Gateway ID being migrated |
+| `aws_region` | AWS region where the migration is taking place |
+| `migration_url` | Pre-built HTTP URL to trigger the migration API (`http://<private_ip>/migrate?gatewayId=<id>`) |
+| `next_steps` | Instructions for running the Ansible playbook |
+
 ### Phase 2: Migration Execution (Ansible)
 
 The Ansible playbook handles the actual migration process: stopping the old instance, detaching and reattaching EBS volumes (cache disks + old root) to the new instance, triggering the migration API, cleaning up the old root volume, and optionally rejoining the Gateway to Active Directory (Steps 3 - 15 from the [Method #1](https://docs.aws.amazon.com/filegateway/latest/files3/migrate-data.html) migration approach). This separation keeps the destructive/stateful operations out of Terraform and in an idempotent playbook that can be re-run if something fails mid-way.
+
+> **Important:** The playbook detaches but does not delete the old root volume after migration. Once you have confirmed the migration is successful (see Post-Migration Validation below), you should manually delete the old root volume (shown in Terraform output as `old_instance_id`) to avoid unnecessary storage costs.
+
+**Phase 2 outputs (Ansible):**
+
+| Output | Description |
+|--------|-------------|
+| Migration information | Old/new instance IDs, gateway ID, gateway IP, and region |
+| Cache dirty check | Current `CachePercentDirty` metric from CloudWatch with risk assessment |
+| Port 80 connectivity | Reachability status of the new gateway's migration API endpoint |
+| Volume classification | Breakdown of root disk vs cache disks with volume IDs, sizes, and device mappings |
+| Volume configuration file | Timestamped `migration-volumes-<epoch>.txt` file saved to the `ansible/` directory |
+| Attachment results | Per-volume success/failure status for root and cache disk attachments |
+| Migration API response | Success or failure of the `http://<ip>/migrate?gatewayId=<id>` call |
+| Final instance state | New instance volume layout after old root detach and restart |
+| SMB/AD status | Active Directory domain join status and SMB settings (if applicable) |
+| Migration log | Full playbook output saved to `ansible/logs/migration-<gateway_id>-<timestamp>.log` |
 
 ## Prerequisites
 
@@ -68,7 +99,6 @@ gateway_id = "sgw-12A3456B"
 # Optional settings
 # gateway_type  = "FILE_S3"      # FILE_S3 or CACHED (default: FILE_S3)
 # instance_type = "m7i.xlarge"   # New instance type (default: same as old gateway)
-# reuse_eip     = false          # Reattach existing Elastic IP (default: false)
 
 # Optional: Configure DNS on the new gateway at launch via admincli. For AD authenticated/SMB Gateways this user-data scripts help configure the AD DNS server for the Domain join to succeed in the migration process. 
 # Sample user-data script to configure DNS server
@@ -240,6 +270,32 @@ terraform output next_steps
 | "Migration URL not responding" | Verify the new instance is running, security group allows port 80, and you can reach the instance IP. |
 | "Cache disk count mismatch" | The migration API expects all original cache volumes attached. Verify all cache disks are attached to the new instance at `/dev/sdg+`. |
 
+## Post-Migration Validation
+
+After the migration completes, verify everything is working correctly:
+
+1. Check gateway status in the AWS Console — navigate to Storage Gateway > Gateways and confirm the gateway shows "Running"
+2. Verify file shares are accessible from clients by mounting and listing files
+3. Confirm cache disks are recognized — check CloudWatch `CacheUsed` and `CacheHitPercent` metrics
+4. Test read/write operations on file shares to ensure data integrity
+5. Monitor `CachePercentDirty` to confirm new writes are being uploaded to S3
+
+## Old Root Volume Cleanup
+
+The Ansible playbook automatically detaches the old root volume (`/dev/sdf`) from the new instance after a successful migration, but it does not delete it. This is intentional — the volume serves as a safety net in case you need to investigate issues.
+
+Once you have completed the post-migration validation steps above and are confident the migration succeeded:
+
+```bash
+# Find the old root volume ID from Terraform output
+terraform output migration_summary
+
+# Delete the old root volume (replace with your volume ID)
+aws ec2 delete-volume --volume-id vol-0123456789abcdef0
+```
+
+You should also consider terminating the old gateway EC2 instance once you are satisfied with the migration.
+
 ## Cleanup
 
 To remove the migration infrastructure (after successful migration):
@@ -284,9 +340,8 @@ Do not run `terraform destroy` after a successful migration, as it will terminat
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | gateway\_id | The Storage Gateway ID (e.g., sgw-12A3456B) of the gateway to migrate. The EC2 instance ID will be automatically discovered. | `string` | n/a | yes |
-| gateway\_type | Type of the gateway. Valid options are FILE\_S3, CACHED | `string` | `"FILE_S3"` | no |
+| gateway\_type | Type of the gateway. Valid options are FILE\_S3 | `string` | `"FILE_S3"` | no |
 | instance\_type | Instance type for the new AL2023 gateway. If not specified, uses the same type as the old gateway. Recommended: m7i.xlarge, m7i.2xlarge, r7i.xlarge, etc. | `string` | `null` | no |
-| reuse\_eip | Reattach the existing Elastic IP from the old gateway to the new gateway | `bool` | `false` | no |
 | root\_block\_device | Root block device configuration of the new instance will match the old gateway's root disk configuration. | `map(any)` | `{}` | no |
 | user\_data | User data script for gateway network configuration via admincli (e.g., DNS). | `string` | `null` | no |
 

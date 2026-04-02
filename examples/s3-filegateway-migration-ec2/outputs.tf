@@ -73,6 +73,8 @@ output "next_steps" {
     - Stop old gateway instance
     - Detach and reattach volumes from old gateway instance to new gateway instance 
     - Trigger the migration using URL
-    - Complete the process
+    - Detach the old root disk after a successful migration
+    - Re-Join the Gateway to the AD domain if previously joined. 
+    - Complete the migration 
   EOT
 }

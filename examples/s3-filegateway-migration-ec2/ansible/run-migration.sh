@@ -177,7 +177,7 @@ if [ $PLAYBOOK_EXIT_CODE -eq 0 ]; then
     echo "Next steps:"
     echo "1. Verify gateway status in AWS Console"
     echo "2. Test file share access from clients"
-    echo "3. Once verified, terminate old instance: $OLD_INSTANCE_ID"
+    echo "3. Once verified, terminate old Gateway instance: $OLD_INSTANCE_ID"
 else
     echo -e "${RED}========================================${NC}"
     echo -e "${RED}Migration failed with exit code: $PLAYBOOK_EXIT_CODE${NC}"

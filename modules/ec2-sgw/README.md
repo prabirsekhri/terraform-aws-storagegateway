@@ -21,7 +21,7 @@ To customize the root block device of the Storage Gateway EC2 instance, use the 
 
 The `user_data` variable allows you to pass a script that runs at instance launch via cloud-init. This is useful for configuring network settings on the gateway using the built-in `admincli` tool.
 
-On EC2 instances, the network interface is typically `ens5` (Nitro instances) or `eth0`. The user-data is automatically base64-encoded by the module.
+The network interface name depends on the instance platform: Nitro-based instances use `ens5`, Xen-based instances use `eth0`.
 
 Example — configure static DNS:
 

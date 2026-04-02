@@ -1051,6 +1051,7 @@
         prompt: "Enter the AD domain password"
         echo: false
       register: ad_password_input
+      no_log: true
       when: should_detach_old_root and ad_was_joined
       tags: detach_old_root
 
@@ -1065,7 +1066,7 @@
         --output json
       register: ad_join_result
       changed_when: true
-      no_log: false
+      no_log: true
       ignore_errors: true
       when: should_detach_old_root and ad_was_joined
       tags: detach_old_root

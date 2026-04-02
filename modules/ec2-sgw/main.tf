@@ -32,7 +32,7 @@ resource "aws_instance" "ec2_sgw" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 1
+    http_put_response_hop_limit = 2
   }
 
   root_block_device {

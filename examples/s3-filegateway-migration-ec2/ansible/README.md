@@ -289,14 +289,19 @@ cd .. && terraform output
 
 ## Idempotency
 
-Most tasks are idempotent and safe to re-run:
--  Stopping already-stopped instances (skipped)
--  Detaching already-detached volumes (skipped)
--  Attaching already-attached volumes (skipped)
--  Port 80 connectivity check (safe to repeat)
--  Cache dirty check (safe to repeat)
--  Migration API call (may fail if already migrated)
--  AD rejoin (may fail if already joined)
+The playbook includes a built-in recovery mode: if no volumes are found on the old instance but volumes are already attached to the new instance, it skips the stop/detach/attach steps and jumps straight to the migration trigger. This handles the most common mid-run failure scenario.
+
+**Fully idempotent (safe to re-run):**
+- Step 1 — Gateway discovery: read-only API call, no side effects
+- Step 2 — Cache dirty check: read-only CloudWatch query, no side effects
+- Step 3 — Port 80 connectivity: TCP probe only, includes private IP fallback
+- Step 4 — Volume discovery and classification: read-only, writes a new timestamped config file each run
+- Step 5 — Stop old instance: skipped if already stopped (`when: state != 'stopped'`)
+- Step 6 — Detach volumes: skipped in recovery mode; `ec2_vol` with `instance: ""` is a no-op on already-detached volumes
+- Step 7 — Verify new instance running: read-only assert
+- Step 8 — Attach volumes: skipped in recovery mode; `ec2_vol` attach is a no-op if volume is already attached to the same instance at the same device
+- Step 9 — Update gateway IP: read-only instance info refresh
+
 
 ## Required IAM Permissions
 
@@ -351,12 +356,58 @@ ansible/
    ```
 
 2. **Test File Shares**
+
+   First, get the file share details from the gateway:
    ```bash
-   # NFS
+   # List all file shares on the gateway
+   aws storagegateway list-file-shares \
+     --gateway-arn "arn:aws:storagegateway:$AWS_REGION:$ACCOUNT_ID:gateway/$GATEWAY_ID"
+   ```
+
+   **NFS shares:**
+   ```bash
+   # Verify NFS exports are available
    showmount -e $NEW_GATEWAY_IP
-   
-   # SMB
+
+   # Mount and test (Linux/macOS)
+   sudo mkdir -p /mnt/sgw-nfs
+   sudo mount -t nfs -o nolock,hard $NEW_GATEWAY_IP:/<s3-bucket-name> /mnt/sgw-nfs
+   ls /mnt/sgw-nfs
+   ```
+
+   **SMB shares:**
+   ```bash
+   # List available SMB shares
    smbclient -L $NEW_GATEWAY_IP -U username
+
+   # Mount on Linux
+   sudo mkdir -p /mnt/sgw-smb
+   sudo mount -t cifs //$NEW_GATEWAY_IP/<share-name> /mnt/sgw-smb \
+     -o username=<domain-user>,password=<password>,domain=<domain-name>
+   ls /mnt/sgw-smb
+   ```
+
+   **SMB on Windows (map network drive):**
+   ```powershell
+   # Map as a network drive
+   net use Z: \\<NEW_GATEWAY_IP>\<share-name> /user:<domain-name>\<username> <password>
+
+   # Or use File Explorer:
+   # 1. Open File Explorer → right-click "This PC" → "Map network drive"
+   # 2. Drive: Z: (or any available letter)
+   # 3. Folder: \\<NEW_GATEWAY_IP>\<share-name>
+   # 4. Check "Connect using different credentials"
+   # 5. Enter domain\username and password
+   ```
+
+   **SMB on macOS (Finder):**
+   ```
+   # From Finder: Go → Connect to Server (⌘K)
+   # Enter: smb://<NEW_GATEWAY_IP>/<share-name>
+   # Authenticate with domain credentials
+
+   # Or from terminal:
+   open smb://<domain-user>@<NEW_GATEWAY_IP>/<share-name>
    ```
 
 3. **Re-join Active Directory** (if applicable)

@@ -17,11 +17,11 @@ variable "gateway_id" {
 
 variable "gateway_type" {
   type        = string
-  description = "Type of the gateway. Valid options are FILE_S3, VTL, CACHED, STORED"
+  description = "Type of the gateway. Valid options are FILE_S3"
   default     = "FILE_S3"
   validation {
-    condition     = contains(["FILE_S3", "CACHED"], var.gateway_type)
-    error_message = "Incorrect gateway type. Valid options are FILE_S3, CACHED."
+    condition     = var.gateway_type == "FILE_S3"
+    error_message = "Incorrect gateway type. Valid option is FILE_S3."
   }
 }
 

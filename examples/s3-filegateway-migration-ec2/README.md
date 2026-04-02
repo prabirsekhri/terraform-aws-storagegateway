@@ -1,12 +1,12 @@
-# EC2 File Gateway Migration 
+<!-- BEGIN_TF_DOCS -->
+# EC2 File Gateway Migration
 
 Example demonstrates how to migrate an existing EC2-based S3 File Gateway to a new instance — whether your data and performance needs grow, you upgrade to a newer host platform (e.g., AL2 to AL2023), or refresh underlying hardware. The migration procedure preserves your cache disks and Gateway ID by following [Method 1](https://docs.aws.amazon.com/filegateway/latest/files3/migrate-data.html) from the File Gateway documentation.
-
 
 ## Overview
 
 This migration method:
-- Preserves cache disk data (useful for large caches or read intensive applications)
+- Preserves cache disk data (useful for large caches or read-intensive applications)
 - Maintains the same Gateway configuration (preserving the Gateway and File share IDs)
 - Allows specifying instance type for the new gateway
 - Requires 1-2 hours of downtime
@@ -35,7 +35,7 @@ Terraform deploys the latest version of the gateway EC2 instance alongside the e
 
 The Ansible playbook handles the actual migration process: stopping the old instance, detaching and reattaching EBS volumes (cache disks + old root) to the new instance, triggering the migration API, cleaning up the old root volume, and optionally rejoining the Gateway to Active Directory (Steps 3 - 15 from the [Method #1](https://docs.aws.amazon.com/filegateway/latest/files3/migrate-data.html) migration approach). This separation keeps the destructive/stateful operations out of Terraform and in an idempotent playbook that can be re-run if something fails mid-way.
 
-> **Important:** The playbook detaches but does not delete the old root volume after migration. Once you have confirmed the migration is successful (see Post-Migration Validation below), you should manually delete the old root volume (shown in Terraform output as `old_instance_id`) to avoid unnecessary storage costs.
+> **Important:** The playbook detaches but does not delete the old root volume after migration. Once you have confirmed the migration is successful (see Post-Migration Validation below), you should manually delete the old root volume (shown in Terraform output via `migration_summary`) to avoid unnecessary storage costs.
 
 **Phase 2 outputs (Ansible):**
 
@@ -97,10 +97,10 @@ Edit `terraform.tfvars`:
 gateway_id = "sgw-12A3456B"
 
 # Optional settings
-# gateway_type  = "FILE_S3"      # FILE_S3 or CACHED (default: FILE_S3)
+# gateway_type  = "FILE_S3"      # FILE_S3 (default: FILE_S3)
 # instance_type = "m7i.xlarge"   # New instance type (default: same as old gateway)
 
-# Optional: Configure DNS on the new gateway at launch via admincli. For AD authenticated/SMB Gateways this user-data scripts help configure the AD DNS server for the Domain join to succeed in the migration process. 
+# Optional: Configure DNS on the new gateway at launch via admincli. For AD-authenticated/SMB gateways, this user-data script helps configure the AD DNS server for the domain join to succeed in the migration process.
 # Sample user-data script to configure DNS server
 # user_data = <<-EOF
 #   #!/bin/bash
@@ -313,50 +313,58 @@ Do not run `terraform destroy` after a successful migration, as it will terminat
 - [Storage Gateway Requirements](https://docs.aws.amazon.com/filegateway/latest/files3/Requirements.html)
 - [EC2 Instance Types](https://aws.amazon.com/ec2/instance-types/)
 
-<!-- BEGIN_TF_DOCS -->
-
 ## Requirements
 
 | Name | Version |
 |------|---------|
-| terraform | >= 1.0 |
-| aws | >= 5.0 |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| aws | >= 5.0 |
-| external | n/a |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.0 |
+| <a name="provider_external"></a> [external](#provider\_external) | n/a |
 
 ## Modules
 
 | Name | Source | Version |
 |------|--------|---------|
-| new\_sgw | ../../modules/ec2-sgw | n/a |
+| <a name="module_new_sgw"></a> [new\_sgw](#module\_new\_sgw) | ../../modules/ec2-sgw | n/a |
+
+## Resources
+
+| Name | Type |
+|------|------|
+| [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
+| [aws_ebs_volumes.cache_volumes](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ebs_volumes) | data source |
+| [aws_instance.old_sgw](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/instance) | data source |
+| [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
+| [aws_subnet.old_sgw_subnet](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet) | data source |
+| [external_external.gateway_instance](https://registry.terraform.io/providers/hashicorp/external/latest/docs/data-sources/external) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| gateway\_id | The Storage Gateway ID (e.g., sgw-12A3456B) of the gateway to migrate. The EC2 instance ID will be automatically discovered. | `string` | n/a | yes |
-| gateway\_type | Type of the gateway. Valid options are FILE\_S3 | `string` | `"FILE_S3"` | no |
-| instance\_type | Instance type for the new AL2023 gateway. If not specified, uses the same type as the old gateway. Recommended: m7i.xlarge, m7i.2xlarge, r7i.xlarge, etc. | `string` | `null` | no |
-| root\_block\_device | Root block device configuration of the new instance will match the old gateway's root disk configuration. | `map(any)` | `{}` | no |
-| user\_data | User data script for gateway network configuration via admincli (e.g., DNS). | `string` | `null` | no |
+| <a name="input_gateway_id"></a> [gateway\_id](#input\_gateway\_id) | The Storage Gateway ID (e.g., sgw-12A3456B) of the gateway to migrate. The EC2 instance ID will be automatically discovered. | `string` | n/a | yes |
+| <a name="input_gateway_type"></a> [gateway\_type](#input\_gateway\_type) | Type of the gateway. Valid options are FILE\_S3 | `string` | `"FILE_S3"` | no |
+| <a name="input_instance_type"></a> [instance\_type](#input\_instance\_type) | Instance type for the new AL2023 gateway. If not specified, uses the same type as the old gateway. Recommended: m7i.xlarge, m7i.2xlarge, r7i.xlarge, etc. | `string` | `null` | no |
+| <a name="input_root_block_device"></a> [root\_block\_device](#input\_root\_block\_device) | Root block device configuration of the new instance will match the old gateway's root disk configuration. | `map(any)` | `{}` | no |
+| <a name="input_user_data"></a> [user\_data](#input\_user\_data) | User data script for gateway network configuration via admincli (e.g., DNS) | `string` | `null` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| migration\_summary | Summary of the migration process |
-| new\_gateway\_instance\_id | The EC2 instance ID of the new Storage Gateway |
-| new\_gateway\_private\_ip | The private IP address of the new Storage Gateway |
-| new\_gateway\_public\_ip | The public IP address of the new Storage Gateway |
-| old\_instance\_id | The EC2 instance ID of the old Storage Gateway (auto-discovered) |
-| gateway\_id | The Storage Gateway ID being migrated |
-| aws\_region | The AWS region where the migration is taking place |
-| migration\_url | URL to initiate the gateway migration process |
-| next\_steps | Next steps to complete the migration |
-
+| <a name="output_aws_region"></a> [aws\_region](#output\_aws\_region) | The AWS region where the migration is taking place |
+| <a name="output_gateway_id"></a> [gateway\_id](#output\_gateway\_id) | The Storage Gateway ID being migrated |
+| <a name="output_migration_summary"></a> [migration\_summary](#output\_migration\_summary) | Summary of the migration process |
+| <a name="output_migration_url"></a> [migration\_url](#output\_migration\_url) | URL to initiate the gateway migration process |
+| <a name="output_new_gateway_instance_id"></a> [new\_gateway\_instance\_id](#output\_new\_gateway\_instance\_id) | The EC2 instance ID of the new Storage Gateway |
+| <a name="output_new_gateway_private_ip"></a> [new\_gateway\_private\_ip](#output\_new\_gateway\_private\_ip) | The private IP address of the new Storage Gateway |
+| <a name="output_new_gateway_public_ip"></a> [new\_gateway\_public\_ip](#output\_new\_gateway\_public\_ip) | The public IP address of the new Storage Gateway |
+| <a name="output_next_steps"></a> [next\_steps](#output\_next\_steps) | Next steps to complete the migration |
+| <a name="output_old_instance_id"></a> [old\_instance\_id](#output\_old\_instance\_id) | The EC2 instance ID of the old Storage Gateway |
 <!-- END_TF_DOCS -->

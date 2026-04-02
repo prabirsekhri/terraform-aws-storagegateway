@@ -6,6 +6,7 @@ Example demonstrates how to migrate an existing EC2-based S3 File Gateway to a n
 ## Overview
 
 This migration method:
+
 - Preserves cache disk data (useful for large caches or read-intensive applications)
 - Maintains the same Gateway configuration (preserving the Gateway and File share IDs)
 - Allows specifying instance type for the new gateway
@@ -108,7 +109,7 @@ gateway_id = "sgw-12A3456B"
 # EOF
 ```
 
-## User Data (Network Configuration)
+#### Step 1a: User Data for Network Configuration
 
 The optional `user_data` variable allows you to run a script at instance launch via cloud-init to configure network settings using the gateway's built-in `admincli` tool. This is particularly useful for AD-authenticated/SMB gateways where the AD DNS server must be configured for the domain join to succeed during migration.
 
@@ -124,6 +125,7 @@ terraform plan
 ```
 
 Review the plan to ensure:
+
 - New gateway instance will be created in the same subnet/AZ as the old gateway
 - The existing security group from the old instance will be reused
 - No new cache volume or EIP will be created (volumes are migrated from the old instance)
@@ -135,6 +137,7 @@ terraform apply
 ```
 
 This provisions:
+
 - New Storage Gateway EC2 instance (using the latest AMI from SSM parameter)
 - Root disk matching the old gateway's configuration
 - Reuses the old instance's security group
@@ -147,7 +150,6 @@ This provisions:
   # Use existing security group from old instance
   create_security_group = false
   security_group_id     = tolist(data.aws_instance.old_sgw.vpc_security_group_ids)[0]
-
 ```
 
 ### Phase 2: Migration Execution
@@ -177,6 +179,7 @@ The `run-migration.sh` script extracts Terraform outputs, validates prerequisite
 11. If the gateway was previously joined to AD, prompt for credentials and rejoin
 
 **Prerequisites for Ansible:**
+
 ```bash
 # Install Ansible
 pip install ansible
@@ -195,7 +198,7 @@ See [ansible/README.md](ansible/README.md) for detailed documentation.
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    Migration Process                         │
 ├─────────────────────────────────────────────────────────────┤
@@ -239,7 +242,7 @@ For AL2023 Storage Gateways, AWS recommends using the latest generation instance
 
 If `instance_type` is not specified, the new gateway will use the same type as the old gateway.
 
-## Outputs
+## Terraform Outputs
 
 After applying, Terraform provides:
 

@@ -137,8 +137,7 @@
           - ""
           - "RECOMMENDATION:"
           - "  • 0% = Safe to proceed (all data uploaded to S3)"
-          - "  • 1-5% = Low risk, but consider waiting"
-          - "  • >5% = High risk - wait for cache to flush to S3"
+          - "  • >0% = Migration will abort - wait for cache to flush to S3"
           - "=========================================="
       when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
 
@@ -153,15 +152,15 @@
     - name: Fail if cache dirty percentage is too high
       fail:
         msg: |
-          ABORTING: Cache dirty is {{ cache_dirty_percent.Average | float | round(1) }}% (above 5%).
-          This means data has NOT been uploaded to S3. Proceeding may result in DATA LOSS.
+          ABORTING: Cache dirty is {{ cache_dirty_percent.Average | float | round(1) }}% (above 0%).
+          This means data has NOT been fully uploaded to S3. Proceeding may result in DATA LOSS.
           Wait for cache to flush and re-run when CachePercentDirty is 0%.
-      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0 and cache_dirty_percent.Average | default(0) | float > 5
+      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0 and cache_dirty_percent.Average | default(0) | float > 0
 
-    - name: Warn if cache dirty percentage is low
+    - name: Confirm cache is clean
       debug:
-        msg: "Cache dirty is {{ cache_dirty_percent.Average | default(0) | float | round(1) }}% — proceeding with migration"
-      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0 and cache_dirty_percent.Average | default(0) | float <= 5
+        msg: "Cache dirty is 0% — safe to proceed with migration"
+      when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0 and cache_dirty_percent.Average | default(0) | float == 0
 
     ############################################################################
     # Step 3: Verify Port 80 Connectivity to New Gateway Instance

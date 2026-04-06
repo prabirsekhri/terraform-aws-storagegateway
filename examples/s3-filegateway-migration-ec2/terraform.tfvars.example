@@ -15,9 +15,6 @@ gateway_id = "sgw-12A3456B"
 # Recommended AL2023-compatible types: m7i.xlarge, m7i.2xlarge, r7i.xlarge, etc.
 # instance_type = "m7i.xlarge"
 
-# Optional: Reuse existing Elastic IP (default: false)
-# reuse_eip = false
-
 # Optional: Root block device configuration
 # root_block_device = {
 #   kms_key_id  = null    # Optional: KMS key for encryption

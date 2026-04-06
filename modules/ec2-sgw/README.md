@@ -21,7 +21,7 @@ To customize the root block device of the Storage Gateway EC2 instance, use the 
 
 The `user_data` variable allows you to pass a script that runs at instance launch via cloud-init. This is useful for configuring network settings on the gateway using the built-in `admincli` tool.
 
-The network interface name depends on the instance platform: Nitro-based instances use `ens5`, Xen-based instances use `eth0`.
+On EC2 instances, the network interface is typically `ens5` (Nitro instances) or `eth0`. The user-data is automatically base64-encoded by the module.
 
 Example — configure static DNS:
 
@@ -110,7 +110,7 @@ No modules.
 | <a name="input_instance_type"></a> [instance\_type](#input\_instance\_type) | The instance type to use for the Storage Gateway. See https://docs.aws.amazon.com/filegateway/latest/files3/Requirements.html#requirements-hardware-ec2 for supported instance families. | `string` | `"m5.xlarge"` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name of the EC2 Storage Gateway instance | `string` | `"aws-storage-gateway"` | no |
 | <a name="input_root_block_device"></a> [root\_block\_device](#input\_root\_block\_device) | Customize details about the root block device of the instance. See Block Devices in README.md for details | `map(any)` | <pre>{<br/>  "disk_size": 80,<br/>  "kms_key_id": null,<br/>  "volume_type": "gp3"<br/>}</pre> | no |
-| <a name="input_security_group_id"></a> [security\_group\_id](#input\_security\_group\_id) | Optionally provide an existing Security Group ID to associate with EC2 Storage Gateway. Variable create\_security\_group should be set to false to use an existing Security Group | `string` | `null` | no |
+| <a name="input_security_group_id"></a> [security\_group\_id](#input\_security\_group\_id) | List of existing Security Group IDs to associate with the EC2 Storage Gateway. Variable create\_security\_group should be set to false to use existing Security Groups | `list(string)` | `[]` | no |
 | <a name="input_ssh_key_name"></a> [ssh\_key\_name](#input\_ssh\_key\_name) | (Optional) The name of an existing EC2 Key pair for SSH access to the EC2 Storage Gateway | `string` | `null` | no |
 | <a name="input_user_data"></a> [user\_data](#input\_user\_data) | User data script for gateway configuration at launch (e.g., DNS via admincli). Runs once on first boot. | `string` | `null` | no |
 

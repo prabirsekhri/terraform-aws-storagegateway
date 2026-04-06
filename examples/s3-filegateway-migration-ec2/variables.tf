@@ -6,8 +6,8 @@ variable "gateway_id" {
   type        = string
   description = "The Storage Gateway ID (e.g., sgw-12A3456B) of the gateway to migrate. The EC2 instance ID will be automatically discovered."
   validation {
-    condition     = can(regex("^sgw-[A-Z0-9]{8}$", var.gateway_id))
-    error_message = "The gateway_id must be a valid Storage Gateway ID (e.g., sgw-12A3456B)."
+    condition     = can(regex("^sgw-[A-Za-z0-9]{8,17}$", var.gateway_id))
+    error_message = "The gateway_id must be a valid Storage Gateway ID (e.g., sgw-12A3456B or sgw-1a2b3c4d)."
   }
 }
 

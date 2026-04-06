@@ -80,9 +80,9 @@ module "new_sgw" {
   create_cache_volume = false
   create_eip          = false
 
-  # Use existing security group from old instance
+  # Use existing security groups from old instance
   create_security_group = false
-  security_group_id     = tolist(data.aws_instance.old_sgw.vpc_security_group_ids)[0]
+  security_group_id     = tolist(data.aws_instance.old_sgw.vpc_security_group_ids)
 
   # Preserve root block device settings from old instance
   root_block_device = local.root_block_device

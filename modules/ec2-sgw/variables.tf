@@ -39,9 +39,9 @@ variable "vpc_id" {
 }
 
 variable "security_group_id" {
-  type        = string
-  description = "Optionally provide an existing Security Group ID to associate with EC2 Storage Gateway. Variable create_security_group should be set to false to use an existing Security Group"
-  default     = null
+  type        = list(string)
+  description = "List of existing Security Group IDs to associate with the EC2 Storage Gateway. Variable create_security_group should be set to false to use existing Security Groups"
+  default     = []
 }
 
 variable "create_security_group" {

@@ -875,9 +875,9 @@
     - name: Detach old root volume from new instance
       amazon.aws.ec2_vol:
         id: "{{ root_disk.id }}"
-        instance: "{{ new_instance_id }}"
-        state: absent
+        instance: ""
         region: "{{ aws_region }}"
+        state: present
       when: should_detach_old_root
       register: detach_result
       tags: detach_old_root

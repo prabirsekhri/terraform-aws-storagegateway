@@ -19,15 +19,6 @@ Run `terraform init -upgrade` after updating.
 
 ---
 
-## Upgrading to v3.2.0
-
-Key changes:
-
-- `security_group_id` in the ec2-sgw module changed from `string` to `list(string)` to support multiple security groups. Update existing usage: `security_group_id = "sg-xxx"` → `security_group_id = ["sg-xxx"]`
-- New migration example (`s3-filegateway-migration-ec2`) for automating AL2 to AL2023 gateway migration
-
----
-
 AWS Storage Gateway is available in 3 types:
 
 - Amazon S3 File Gateway (FILE\_S3)
@@ -232,6 +223,10 @@ module "nfs_share" {
 
 The examples also includes "aws\_kms\_key" resource block to create a KMS key. For production deployments, you should pass in a key policy that restricts the use of the key based on your access requirements. Refer to the [AWS KMS key policies documentation](https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html) for information.
 
+## Migrating EC2 Storage Gateways
+
+For migrating existing EC2-based Storage Gateways to new instances (e.g., upgrading from AL2 to AL2023), see the [s3-filegateway-migration-ec2](examples/s3-filegateway-migration-ec2) example. This example automates the migration process while preserving cache disks and gateway configuration.
+
 ## Networking Considerations
 
 ### Storage Gateway interface VPC Endpoint configuration for EC2 Gateway
@@ -286,7 +281,7 @@ module "ec2_sgw" {
 }
 ```
 
-To use your own security group, set create\_security\_group = false and append your own security\_group\_id attribute as shown in the example below:
+To use your own security groups, set create\_security\_group = false and provide a list of security group IDs:
 
 ```hcl
 module "ec2_sgw" {
@@ -294,7 +289,7 @@ module "ec2_sgw" {
   vpc_id                = var.vpc_id
   subnet_id             = var.subnet_id
   create_security_group = false
-  security_group_id     = "sg-12345678"
+  security_group_id     = ["sg-12345678", "sg-87654321"]
 }
 ```
 

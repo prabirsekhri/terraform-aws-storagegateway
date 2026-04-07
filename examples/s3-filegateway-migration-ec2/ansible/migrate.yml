@@ -49,18 +49,20 @@
         --region "{{ aws_region }}"
         --output json
       register: gateway_info_raw
-      when: not instance_id_provided
       changed_when: false
 
     - name: Parse gateway information
       set_fact:
         gateway_info: "{{ gateway_info_raw.stdout | from_json }}"
-      when: not instance_id_provided
 
     - name: Extract EC2 instance ID from gateway information
       set_fact:
         old_instance_id: "{{ gateway_info.Ec2InstanceId }}"
       when: not instance_id_provided
+
+    - name: Extract gateway name for CloudWatch dimensions
+      set_fact:
+        gateway_name: "{{ gateway_info.GatewayName }}"
 
     - name: Validate old instance ID was discovered
       assert:
@@ -88,7 +90,7 @@
       command: >
         python3 -c "from datetime import datetime, timedelta; import json;
         now=datetime.utcnow();
-        print(json.dumps({'start': (now - timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%S'), 'end': now.strftime('%Y-%m-%dT%H:%M:%S')}))"
+        print(json.dumps({'start': (now - timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M:%S'), 'end': now.strftime('%Y-%m-%dT%H:%M:%S')}))"
       register: cw_time_range_raw
       changed_when: false
 
@@ -102,7 +104,7 @@
         aws cloudwatch get-metric-statistics
         --namespace AWS/StorageGateway
         --metric-name CachePercentDirty
-        --dimensions Name=GatewayId,Value={{ gateway_id }}
+        --dimensions Name=GatewayId,Value={{ gateway_id }} Name=GatewayName,Value={{ gateway_name }}
         --start-time {{ cw_start_time }}
         --end-time {{ cw_end_time }}
         --period 300
@@ -141,15 +143,18 @@
           - "=========================================="
       when: cache_dirty_metric.rc == 0 and cache_dirty_data.Datapoints | length > 0
 
-    - name: Warn if cache dirty metric unavailable
-      debug:
-        msg:
-          - "WARNING: Unable to retrieve cache dirty metric"
-          - "This may be normal if the gateway is new or has no recent activity"
-          - "Proceeding with migration..."
+    - name: Fail if cache dirty metric unavailable
+      fail:
+        msg: |
+          ABORTING: Unable to retrieve CachePercentDirty metric for gateway {{ gateway_id }}.
+          No datapoints found in the last 30 minutes. This could indicate:
+          - The gateway is already stopped
+          - Insufficient CloudWatch permissions
+          - Incorrect gateway ID
+          Verify the gateway is running and the metric is available in CloudWatch before retrying.
       when: cache_dirty_metric.rc != 0 or (cache_dirty_data.Datapoints | default([]) | length == 0)
 
-    - name: Fail if cache dirty percentage is too high
+    - name: Fail if cache dirty percentage is > 0%
       fail:
         msg: |
           ABORTING: Cache dirty is {{ cache_dirty_percent.Average | float | round(1) }}% (above 0%).

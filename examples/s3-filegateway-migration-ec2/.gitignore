@@ -1,0 +1,15 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
+*.tfplan
+
+# Ansible
+ansible/aws_env/
+ansible/migration-volumes-*.txt
+ansible/logs/
+
+# OS
+.DS_Store

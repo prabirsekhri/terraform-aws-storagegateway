@@ -20,12 +20,14 @@ resource "aws_instance" "ec2_sgw" {
   #checkov:skip=CKV_AWS_126:Detailed monitoring is optional for Storage Gateway EC2 instances
   #checkov:skip=CKV2_AWS_41:IAM role attachment is optional - users can attach roles via instance profile variable if needed
   ami                    = data.aws_ssm_parameter.sgw_ami.value
-  vpc_security_group_ids = var.create_security_group ? aws_security_group.ec2_sg[*].id : [var.security_group_id]
+  vpc_security_group_ids = var.create_security_group ? aws_security_group.ec2_sg[*].id : var.security_group_id
   subnet_id              = var.subnet_id
   instance_type          = var.instance_type
   key_name               = var.ssh_key_name
   ebs_optimized          = true
   availability_zone      = var.availability_zone
+
+  user_data_base64 = var.user_data != null ? base64encode(var.user_data) : null
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -46,8 +48,8 @@ resource "aws_instance" "ec2_sgw" {
   lifecycle {
     # the Security group ID must be non-empty or create_security_group must be true
     precondition {
-      condition     = var.create_security_group || try((length(var.security_group_id) > 3 && substr(var.security_group_id, 0, 3) == "sg-"), false)
-      error_message = "Please specify create_security_group = true or provide a valid Security Group ID for var.security_group_id"
+      condition     = var.create_security_group || length(var.security_group_id) > 0
+      error_message = "Please specify create_security_group = true or provide a valid list of Security Group IDs for var.security_group_id"
     }
 
     # Ignore AMI changes to prevent unexpected instance replacement
@@ -63,12 +65,14 @@ resource "aws_eip" "ip" {
 }
 
 resource "aws_volume_attachment" "ebs_volume" {
+  count       = var.create_cache_volume ? 1 : 0
   device_name = "/dev/sdb"
-  volume_id   = aws_ebs_volume.cache_disk.id
+  volume_id   = aws_ebs_volume.cache_disk[0].id
   instance_id = aws_instance.ec2_sgw.id
 }
 
 resource "aws_ebs_volume" "cache_disk" {
+  count             = var.create_cache_volume ? 1 : 0
   availability_zone = aws_instance.ec2_sgw.availability_zone
   encrypted         = true
   size              = try(tonumber(var.cache_block_device["disk_size"]), 150)

@@ -1,0 +1,48 @@
+################################################################################
+# Required Variables
+################################################################################
+
+variable "gateway_id" {
+  type        = string
+  description = "The Storage Gateway ID (e.g., sgw-12A3456B) of the gateway to migrate. The EC2 instance ID will be automatically discovered."
+  validation {
+    condition     = can(regex("^sgw-[A-Za-z0-9]{8,17}$", var.gateway_id))
+    error_message = "The gateway_id must be a valid Storage Gateway ID (e.g., sgw-12A3456B or sgw-1a2b3c4d)."
+  }
+}
+
+################################################################################
+# Optional Variables
+################################################################################
+
+variable "gateway_type" {
+  type        = string
+  description = "Type of the gateway. Valid options are FILE_S3"
+  default     = "FILE_S3"
+  validation {
+    condition     = var.gateway_type == "FILE_S3"
+    error_message = "Incorrect gateway type. Valid option is FILE_S3."
+  }
+}
+
+variable "instance_type" {
+  type        = string
+  description = "Instance type for the new AL2023 gateway. If not specified, uses the same type as the old gateway. Recommended: m7i.xlarge, m7i.2xlarge, r7i.xlarge, etc."
+  default     = null
+}
+
+variable "user_data" {
+  type        = string
+  description = "User data script for gateway network configuration via admincli (e.g., DNS)"
+  default     = null
+}
+
+variable "root_block_device" {
+  description = "Root block device configuration of the new instance will match the old gateway's root disk configuration."
+  type        = map(any)
+  default     = {}
+  validation {
+    condition     = try(tonumber(var.root_block_device["disk_size"]), 80) >= 80
+    error_message = "The root_block_device disk_size must be at least 80 GB per AWS Storage Gateway requirements."
+  }
+}

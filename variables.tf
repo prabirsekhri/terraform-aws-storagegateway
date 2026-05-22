@@ -13,21 +13,21 @@ variable "join_smb_domain" {
 variable "domain_name" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The name of the domain that you want the gateway to join"
 }
 
 variable "domain_username" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The user name for the service account on your self-managed AD domain that SGW use to join to your AD domain"
 }
 
 variable "domain_password" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The password for the service account on your self-managed AD domain that SGW will use to join to your AD domain"
 }
 
@@ -41,7 +41,7 @@ variable "timeout_in_seconds" {
 variable "organizational_unit" {
   type        = string
   sensitive   = true
-  default     = ""
+  default     = null
   description = "The organizational unit (OU) is a container in an Active Directory that can hold users, groups, computers, and other OUs and this parameter specifies the OU that the gateway will join within the AD domain."
 }
 
@@ -57,29 +57,29 @@ variable "timezone" {
 
 variable "gateway_type" {
   type        = string
-  description = "Type of the gateway. Valid options are FILE_S3, FILE_FSX_SMB, VTL, CACHED, STORED"
+  description = "Type of the gateway. Valid options are FILE_S3, VTL, CACHED, STORED"
   default     = "FILE_S3"
   validation {
-    condition     = contains(["FILE_S3", "FILE_FSX_SMB", "VTL", "CACHED", "STORED"], var.gateway_type)
-    error_message = "Incorrect gateway type. Valid options are FILE_S3, FILE_FSX_SMB, VTL, CACHED, STORED"
+    condition     = contains(["FILE_S3", "VTL", "CACHED", "STORED"], var.gateway_type)
+    error_message = "Incorrect gateway type. Valid options are FILE_S3, VTL, CACHED, STORED. Note: FILE_FSX_SMB is deprecated and not supported."
   }
 }
 
 variable "gateway_ip_address" {
   type        = string
-  description = "IP Address of the SGW appliance in vSphere"
+  description = "IP Address of the Storage Gateway VM in vSphere"
 }
 
 variable "disk_path" {
-  default     = "/dev/sdb"
   type        = string
-  description = "Disk path on the SGW appliance where the cache disk resides on the OS"
+  default     = null
+  description = "Disk path on the Storage Gateway VM where the cache disk resides. Use '/dev/nvme1n1' for EC2 Nitro instances. For VMware, use disk_node instead."
 }
 
 variable "disk_node" {
-  default     = "/dev/sdb"
+  default     = null
   type        = string
-  description = "Disk node on the SGW appliance where the cache disk resides on the OS"
+  description = "Disk node on the Storage Gateway VM. Use 'SCSI (0:1)' for VMware deployments. For EC2, use disk_path instead."
 }
 
 variable "domain_controllers" {
@@ -117,7 +117,7 @@ variable "vpc_endpoint_subnet_ids" {
 
 variable "create_vpc_endpoint_security_group" {
   type        = bool
-  description = "Create a Security Group for the VPC Endpoint for Storage Gateway appliance."
+  description = "Create a Security Group for the VPC Endpoint for Storage Gateway"
   default     = false
 }
 
@@ -129,7 +129,7 @@ variable "vpc_endpoint_security_group_id" {
 
 variable "gateway_private_ip_address" {
   type        = string
-  description = "Inbound IP address of Gateway VM appliance for Security Group associated with VPC Endpoint. Must be set if create_vpc_endpoint=true"
+  description = "Inbound IP address of the Storage Gateway VM for Security Group associated with VPC Endpoint. Must be set if create_vpc_endpoint=true"
   default     = null
 }
 

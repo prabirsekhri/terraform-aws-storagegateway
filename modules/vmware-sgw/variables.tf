@@ -32,7 +32,7 @@ variable "datacenter" {
 
 variable "os_size" {
   type        = string
-  description = "Size of the OS disk of the appliance. Specified in gigabytes, default is the current appliance default. Likely doesn't need to be modified"
+  description = "Size of the OS disk of the VM. Specified in gigabytes, default is the current VM default. Likely doesn't need to be modified"
   default     = "80"
 }
 
@@ -54,7 +54,7 @@ variable "cache_size" {
 }
 
 variable "remote_ovf_url" {
-  default     = "https://d28e23pnuuv0hr.cloudfront.net/aws-storage-gateway-latest.ova"
+  default     = "https://dd958of58tzpr.cloudfront.net/aws-storage-gateway-file-s3-gateway-v2-x86_64.ova"
   type        = string
   description = "URL where the aws storage gateway ova is hosted."
 }

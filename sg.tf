@@ -1,7 +1,6 @@
 # Security group for VPC Endpoint
 resource "aws_security_group" "vpce_sg" {
-
-  for_each = (var.create_vpc_endpoint && var.create_vpc_endpoint_security_group) ? toset(["vpce_sg"]) : toset([])
+  count = (var.create_vpc_endpoint && var.create_vpc_endpoint_security_group) ? 1 : 0
 
   lifecycle {
     # The gateway_private_ip_address must be valid"
@@ -13,58 +12,62 @@ resource "aws_security_group" "vpce_sg" {
 
   description = "Security group with custom ports open Storage Gateway VPC Endpoint connectivity"
   vpc_id      = var.vpc_id
+}
 
-  ingress {
+resource "aws_security_group_rule" "vpce_443" {
+  count             = (var.create_vpc_endpoint && var.create_vpc_endpoint_security_group) ? 1 : 0
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  description       = "VPC Endpoint rule HTTPS"
+  cidr_blocks       = ["${var.gateway_private_ip_address}/32"]
+  security_group_id = aws_security_group.vpce_sg[0].id
+}
 
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    description = "VPC Endpoint rule"
-    cidr_blocks = ["${var.gateway_private_ip_address}/32"]
-  }
-  ingress {
-    from_port   = 1026
-    to_port     = 1026
-    protocol    = "tcp"
-    description = "VPC Endpoint rule"
-    cidr_blocks = ["${var.gateway_private_ip_address}/32"]
-  }
-  ingress {
-    from_port   = 1027
-    to_port     = 1027
-    protocol    = "tcp"
-    description = "VPC Endpoint rule"
-    cidr_blocks = ["${var.gateway_private_ip_address}/32"]
-  }
-  ingress {
-    from_port   = 1028
-    to_port     = 1028
-    protocol    = "tcp"
-    description = "VPC Endpoint rule"
-    cidr_blocks = ["${var.gateway_private_ip_address}/32"]
-  }
-  ingress {
-    from_port   = 1031
-    to_port     = 1031
-    protocol    = "tcp"
-    description = "VPC Endpoint rule"
-    cidr_blocks = ["${var.gateway_private_ip_address}/32"]
-  }
+resource "aws_security_group_rule" "vpce_dynamic" {
+  count             = (var.create_vpc_endpoint && var.create_vpc_endpoint_security_group) ? 1 : 0
+  type              = "ingress"
+  from_port         = 1026
+  to_port           = 1028
+  protocol          = "tcp"
+  description       = "VPC Endpoint rules"
+  cidr_blocks       = ["${var.gateway_private_ip_address}/32"]
+  security_group_id = aws_security_group.vpce_sg[0].id
+}
 
-  ingress {
-    from_port   = 2222
-    to_port     = 2222
-    protocol    = "tcp"
-    description = "VPC Endpoint rule"
-    cidr_blocks = ["${var.gateway_private_ip_address}/32"]
-  }
-  #outbound connections for VPC endpoint to reach to AWS services
-  #tfsec:ignore:aws-ec2-no-public-egress-sgr
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    description = "VPC Endpoint rule"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+resource "aws_security_group_rule" "vpce_1031" {
+  count             = (var.create_vpc_endpoint && var.create_vpc_endpoint_security_group) ? 1 : 0
+  type              = "ingress"
+  from_port         = 1031
+  to_port           = 1031
+  protocol          = "tcp"
+  description       = "VPC Endpoint rules"
+  cidr_blocks       = ["${var.gateway_private_ip_address}/32"]
+  security_group_id = aws_security_group.vpce_sg[0].id
+}
+
+resource "aws_security_group_rule" "vpce_2222" {
+  count             = (var.create_vpc_endpoint && var.create_vpc_endpoint_security_group) ? 1 : 0
+  type              = "ingress"
+  from_port         = 2222
+  to_port           = 2222
+  protocol          = "tcp"
+  description       = "VPC Endpoint rules"
+  cidr_blocks       = ["${var.gateway_private_ip_address}/32"]
+  security_group_id = aws_security_group.vpce_sg[0].id
+}
+
+#outbound connections for VPC endpoint to reach to AWS services
+#tfsec:ignore:aws-ec2-no-public-egress-sgr
+resource "aws_security_group_rule" "vpce_egress" {
+  #checkov:skip=CKV_AWS_382:Storage Gateway VPC endpoint requires outbound access to AWS services
+  count             = (var.create_vpc_endpoint && var.create_vpc_endpoint_security_group) ? 1 : 0
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  description       = "VPC Endpoint egress rule"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.vpce_sg[0].id
 }

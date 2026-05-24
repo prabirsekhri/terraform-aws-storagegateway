@@ -3,7 +3,8 @@
 ################################################################################
 
 output "migration_summary" {
-  description = "Summary of the migration process"
+  description = "Summary of the migration process. Marked sensitive because it includes fields derived from data.vsphere_virtual_machine.old_sgw, which the vSphere provider treats as sensitive. Use `terraform output -json migration_summary` to view."
+  sensitive   = true
   value = {
     gateway_id    = var.gateway_id
     old_vm_name   = var.old_vm_name

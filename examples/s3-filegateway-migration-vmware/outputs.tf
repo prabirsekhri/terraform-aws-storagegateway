@@ -23,7 +23,7 @@ output "migration_summary" {
 
 output "new_gateway_ip" {
   description = "IP address of the new gateway VM"
-  value       = data.vsphere_virtual_machine.new_sgw_info.guest_ip_addresses[0]
+  value       = module.new_sgw.vm_ip
 }
 
 output "old_vm_name" {
@@ -48,7 +48,7 @@ output "aws_region" {
 
 output "migration_url" {
   description = "URL to initiate the gateway migration process"
-  value       = "http://${data.vsphere_virtual_machine.new_sgw_info.guest_ip_addresses[0]}/migrate?gatewayId=${var.gateway_id}"
+  value       = "http://${module.new_sgw.vm_ip}/migrate?gatewayId=${var.gateway_id}"
 }
 
 output "next_steps" {

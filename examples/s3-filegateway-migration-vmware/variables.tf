@@ -120,9 +120,3 @@ variable "local_ovf_path" {
   description = "Local path to the AWS Storage Gateway OVA file. Takes precedence over remote_ovf_url."
   default     = null
 }
-
-variable "provisioning_type" {
-  type        = string
-  description = "Disk provisioning type for the new VM (thick or thin)"
-  default     = "thick"
-}

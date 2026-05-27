@@ -1,3 +1,4 @@
+<!-- BEGIN_TF_DOCS -->
 # VMware File Gateway Migration
 
 Example demonstrates how to migrate an existing VMware-hosted S3 File Gateway to a new VM — whether your data and performance needs grow, you upgrade to a newer gateway appliance version, or refresh underlying hardware. The migration procedure preserves your cache disks and Gateway ID by following [Method 1](https://docs.aws.amazon.com/filegateway/latest/files3/migrate-data.html) from the File Gateway documentation.
@@ -89,7 +90,8 @@ The host that runs Terraform apply and the migration playbook must have network 
 > pip install --upgrade pip
 > pip install ansible-core pyvmomi
 > ansible-galaxy collection install community.vmware amazon.aws
-> ```
+>
+```
 >
 > Activate the venv (`source ~/.ansible-venv/bin/activate`) in every shell that runs Terraform or Ansible against this example.
 
@@ -334,3 +336,68 @@ Do not run `terraform destroy` after a successful migration, as it will destroy 
 - [Storage Gateway Requirements](https://docs.aws.amazon.com/filegateway/latest/files3/Requirements.html)
 - [VMware OVA Deployment Best Practices](https://docs.aws.amazon.com/storagegateway/latest/userguide/Requirements.html#requirements-vmware)
 
+## Requirements
+
+| Name | Version |
+| ---- | ------- |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5.7 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.0 |
+| <a name="requirement_vsphere"></a> [vsphere](#requirement\_vsphere) | >= 2.2.0 |
+
+## Providers
+
+| Name | Version |
+| ---- | ------- |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.0 |
+| <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | >= 2.2.0 |
+
+## Modules
+
+| Name | Source | Version |
+| ---- | ------ | ------- |
+| <a name="module_new_sgw"></a> [new\_sgw](#module\_new\_sgw) | ../../modules/vmware-sgw | n/a |
+
+## Resources
+
+| Name | Type |
+| ---- | ---- |
+| [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
+| [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
+| [vsphere_datacenter.dc](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs/data-sources/datacenter) | data source |
+| [vsphere_virtual_machine.old_sgw](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs/data-sources/virtual_machine) | data source |
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+| ---- | ----------- | ---- | ------- | :------: |
+| <a name="input_cluster"></a> [cluster](#input\_cluster) | Cluster where the new gateway VM will be deployed | `string` | n/a | yes |
+| <a name="input_datacenter"></a> [datacenter](#input\_datacenter) | Name of the vSphere datacenter where the new gateway VM will be deployed | `string` | n/a | yes |
+| <a name="input_datastore"></a> [datastore](#input\_datastore) | Name of the vSphere datastore where the new gateway VM will be deployed | `string` | n/a | yes |
+| <a name="input_gateway_id"></a> [gateway\_id](#input\_gateway\_id) | The Storage Gateway ID (e.g., sgw-12A3456B) of the gateway to migrate. The vSphere VM will be automatically discovered. | `string` | n/a | yes |
+| <a name="input_host"></a> [host](#input\_host) | Target ESXi host used during deployment of the OVA | `string` | n/a | yes |
+| <a name="input_network"></a> [network](#input\_network) | Name of the vSphere port group that the new gateway VM will use | `string` | n/a | yes |
+| <a name="input_old_vm_name"></a> [old\_vm\_name](#input\_old\_vm\_name) | Name of the existing gateway VM in vSphere to migrate from | `string` | n/a | yes |
+| <a name="input_vsphere_password"></a> [vsphere\_password](#input\_vsphere\_password) | The password for the vCenter server | `string` | n/a | yes |
+| <a name="input_vsphere_server"></a> [vsphere\_server](#input\_vsphere\_server) | vSphere server IP address or FQDN | `string` | n/a | yes |
+| <a name="input_vsphere_user"></a> [vsphere\_user](#input\_vsphere\_user) | vSphere service account user name | `string` | n/a | yes |
+| <a name="input_allow_unverified_ssl"></a> [allow\_unverified\_ssl](#input\_allow\_unverified\_ssl) | Boolean that can be set to true to disable SSL certificate verification. | `bool` | `false` | no |
+| <a name="input_cpus"></a> [cpus](#input\_cpus) | Number of vCPUs for the new gateway VM. If not specified, matches the old VM. | `string` | `null` | no |
+| <a name="input_gateway_type"></a> [gateway\_type](#input\_gateway\_type) | Type of the gateway. Valid options are FILE\_S3 | `string` | `"FILE_S3"` | no |
+| <a name="input_local_ovf_path"></a> [local\_ovf\_path](#input\_local\_ovf\_path) | Local path to the AWS Storage Gateway OVA file. Takes precedence over remote\_ovf\_url. | `string` | `null` | no |
+| <a name="input_memory"></a> [memory](#input\_memory) | Memory in MB for the new gateway VM. If not specified, matches the old VM. | `string` | `null` | no |
+| <a name="input_new_vm_name"></a> [new\_vm\_name](#input\_new\_vm\_name) | Name for the new gateway VM. If not specified, uses '<old\_vm\_name>-new'. | `string` | `null` | no |
+| <a name="input_remote_ovf_url"></a> [remote\_ovf\_url](#input\_remote\_ovf\_url) | URL where the AWS Storage Gateway OVA is hosted. | `string` | `"https://dd958of58tzpr.cloudfront.net/aws-storage-gateway-file-s3-gateway-v2-x86_64.ova"` | no |
+
+## Outputs
+
+| Name | Description |
+| ---- | ----------- |
+| <a name="output_aws_region"></a> [aws\_region](#output\_aws\_region) | The AWS region where the gateway is registered |
+| <a name="output_gateway_id"></a> [gateway\_id](#output\_gateway\_id) | The Storage Gateway ID being migrated |
+| <a name="output_migration_summary"></a> [migration\_summary](#output\_migration\_summary) | Summary of the migration process. Marked sensitive because it includes fields derived from data.vsphere\_virtual\_machine.old\_sgw, which the vSphere provider treats as sensitive. Use `terraform output -json migration_summary` to view. |
+| <a name="output_migration_url"></a> [migration\_url](#output\_migration\_url) | URL to initiate the gateway migration process |
+| <a name="output_new_gateway_ip"></a> [new\_gateway\_ip](#output\_new\_gateway\_ip) | IP address of the new gateway VM |
+| <a name="output_new_vm_name"></a> [new\_vm\_name](#output\_new\_vm\_name) | Name of the new gateway VM in vSphere |
+| <a name="output_next_steps"></a> [next\_steps](#output\_next\_steps) | Next steps to complete the migration |
+| <a name="output_old_vm_name"></a> [old\_vm\_name](#output\_old\_vm\_name) | Name of the old gateway VM in vSphere |
+<!-- END_TF_DOCS -->

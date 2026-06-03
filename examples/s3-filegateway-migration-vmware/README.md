@@ -348,8 +348,8 @@ Do not run `terraform destroy` after a successful migration, as it will destroy 
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.0 |
-| <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | >= 2.2.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.46.0 |
+| <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | 2.12.0 |
 
 ## Modules
 
@@ -386,6 +386,7 @@ Do not run `terraform destroy` after a successful migration, as it will destroy 
 | <a name="input_local_ovf_path"></a> [local\_ovf\_path](#input\_local\_ovf\_path) | Local path to the AWS Storage Gateway OVA file. Takes precedence over remote\_ovf\_url. | `string` | `null` | no |
 | <a name="input_memory"></a> [memory](#input\_memory) | Memory in MB for the new gateway VM. If not specified, matches the old VM. | `string` | `null` | no |
 | <a name="input_new_vm_name"></a> [new\_vm\_name](#input\_new\_vm\_name) | Name for the new gateway VM. If not specified, uses '<old\_vm\_name>-new'. | `string` | `null` | no |
+| <a name="input_os_size"></a> [os\_size](#input\_os\_size) | Size of the OS disk for the new gateway VM, in gigabytes. If not specified, matches the source VM's OS disk size so the migrated gateway has at least the same root capacity. | `string` | `null` | no |
 | <a name="input_remote_ovf_url"></a> [remote\_ovf\_url](#input\_remote\_ovf\_url) | URL where the AWS Storage Gateway OVA is hosted. | `string` | `"https://dd958of58tzpr.cloudfront.net/aws-storage-gateway-file-s3-gateway-v2-x86_64.ova"` | no |
 
 ## Outputs

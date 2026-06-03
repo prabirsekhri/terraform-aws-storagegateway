@@ -65,8 +65,9 @@ resource "vsphere_virtual_machine" "vm" {
   datastore_id               = data.vsphere_datastore.datastore.id
   datacenter_id              = data.vsphere_datacenter.dc.id
   name                       = var.name
-  num_cpus                   = var.cpus
-  memory                     = var.memory
+  num_cpus                   = data.vsphere_ovf_vm_template.sgw.num_cpus
+  memory                     = data.vsphere_ovf_vm_template.sgw.memory
+  num_cores_per_socket       = data.vsphere_ovf_vm_template.sgw.num_cores_per_socket
   guest_id                   = data.vsphere_ovf_vm_template.sgw.guest_id
   firmware                   = data.vsphere_ovf_vm_template.sgw.firmware
   wait_for_guest_net_timeout = 1
@@ -74,14 +75,6 @@ resource "vsphere_virtual_machine" "vm" {
 
   network_interface {
     network_id = data.vsphere_network.network.id
-  }
-
-  # Pass the cache disk size to the OVA via its "cache.size" vApp property
-  # (uint32, gigabytes). The OVA itself sizes the cache disk during deploy.
-  vapp {
-    properties = {
-      "cache.size" = tostring(var.cache_size)
-    }
   }
 
   ovf_deploy {
@@ -97,7 +90,9 @@ resource "vsphere_virtual_machine" "vm" {
     ignore_changes = [
       host_system_id,
       annotation,
-      vapp,
+      disk,
+      num_cpus,
+      memory,
     ]
   }
 }

@@ -109,6 +109,12 @@ variable "memory" {
   default     = null
 }
 
+variable "os_size" {
+  type        = string
+  description = "Size of the OS disk for the new gateway VM, in gigabytes. If not specified, matches the source VM's OS disk size so the migrated gateway has at least the same root capacity."
+  default     = null
+}
+
 variable "remote_ovf_url" {
   type        = string
   description = "URL where the AWS Storage Gateway OVA is hosted."

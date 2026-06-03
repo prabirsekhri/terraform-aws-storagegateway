@@ -32,6 +32,11 @@ locals {
   new_cpus   = var.cpus != null ? var.cpus : tostring(data.vsphere_virtual_machine.old_sgw.num_cpus)
   new_memory = var.memory != null ? var.memory : tostring(data.vsphere_virtual_machine.old_sgw.memory)
 
+  # OS disk on the new VM should match the source VM's OS disk so the
+  # migrated gateway has at least the same root capacity. data...disks is
+  # ordered by SCSI unit; index 0 is the OS disk.
+  new_os_size = var.os_size != null ? var.os_size : tostring(data.vsphere_virtual_machine.old_sgw.disks[0].size)
+
   # Disks attached to the old VM. Index 0 is the OS disk, the rest are cache.
   old_vm_disks = data.vsphere_virtual_machine.old_sgw.disks
 }
@@ -55,6 +60,7 @@ module "new_sgw" {
   network           = var.network
   cpus              = local.new_cpus
   memory            = local.new_memory
+  os_size           = local.new_os_size
   remote_ovf_url    = var.remote_ovf_url
   local_ovf_path    = var.local_ovf_path
   deployment_option = "migrate"

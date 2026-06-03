@@ -47,6 +47,12 @@ variable "cache_size" {
   description = "Size of the cache disk created by the OVA, in gigabytes. Only used when deployment_option = \"new-gateway\". Default is 150, can be increased up to 64000."
 }
 
+variable "os_size" {
+  default     = null
+  type        = string
+  description = "Size of the OS disk in gigabytes. When null, the OVA's default OS disk size (80 GB) is used. Set by the \"migrate\" deployment_option to match the source gateway VM's OS disk size; setting it on \"new-gateway\" is also supported but rarely needed."
+}
+
 variable "remote_ovf_url" {
   default     = "https://dd958of58tzpr.cloudfront.net/aws-storage-gateway-file-s3-gateway-v2-x86_64.ova"
   type        = string

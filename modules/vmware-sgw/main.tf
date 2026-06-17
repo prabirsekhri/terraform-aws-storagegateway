@@ -51,10 +51,10 @@ locals {
 ################################################################################
 # vSphere VM - "new-gateway" deployment option
 #
-# Used for fresh Storage Gateway deployments. The OVA brings both the OS disk
-# (80 GB, fixed by the OVF descriptor) and the cache disk (sized via the
-# cache.size vApp property). prevent_destroy is enabled so a stray destroy
-# does not wipe a production gateway.
+# Used for fresh Storage Gateway deployments. The OVA brings the OS disk and
+# the cache disk; inline disk blocks below override the OVA disk sizes via
+# var.os_size and var.cache_size. prevent_destroy is enabled so a stray
+# destroy does not wipe a production gateway.
 ################################################################################
 
 resource "vsphere_virtual_machine" "vm" {
@@ -65,9 +65,8 @@ resource "vsphere_virtual_machine" "vm" {
   datastore_id               = data.vsphere_datastore.datastore.id
   datacenter_id              = data.vsphere_datacenter.dc.id
   name                       = var.name
-  num_cpus                   = data.vsphere_ovf_vm_template.sgw.num_cpus
-  memory                     = data.vsphere_ovf_vm_template.sgw.memory
-  num_cores_per_socket       = data.vsphere_ovf_vm_template.sgw.num_cores_per_socket
+  num_cpus                   = var.cpus
+  memory                     = var.memory
   guest_id                   = data.vsphere_ovf_vm_template.sgw.guest_id
   firmware                   = data.vsphere_ovf_vm_template.sgw.firmware
   wait_for_guest_net_timeout = 1
@@ -75,6 +74,27 @@ resource "vsphere_virtual_machine" "vm" {
 
   network_interface {
     network_id = data.vsphere_network.network.id
+  }
+
+  # OS disk - sized via var.os_size (default 80, matches the OVA). Declared
+  # inline so callers can resize the OS disk at import time.
+  disk {
+    label            = "os"
+    unit_number      = 0
+    size             = var.os_size
+    thin_provisioned = true
+    eagerly_scrub    = false
+  }
+
+  # Cache disk - sized via var.cache_size. The OVF descriptor declares the
+  # cache disk's capacity as ${cache.size}; the inline disk block overrides
+  # that on import.
+  disk {
+    label            = "cache"
+    unit_number      = 1
+    size             = var.cache_size
+    thin_provisioned = true
+    eagerly_scrub    = false
   }
 
   ovf_deploy {
@@ -90,9 +110,10 @@ resource "vsphere_virtual_machine" "vm" {
     ignore_changes = [
       host_system_id,
       annotation,
-      disk,
-      num_cpus,
-      memory,
+      disk[0].io_share_count,
+      disk[0].thin_provisioned,
+      disk[1].io_share_count,
+      disk[1].thin_provisioned,
     ]
   }
 }
@@ -126,6 +147,18 @@ resource "vsphere_virtual_machine" "vm_migrate" {
     network_id = data.vsphere_network.network.id
   }
 
+  # OS disk - sized via var.os_size. For migrate, the example sets this to
+  # the source gateway's OS disk size so the migrated VM has at least the
+  # same root capacity. Cache and old-root VMDKs are attached to this VM
+  # out-of-band by the Ansible migration playbook.
+  disk {
+    label            = "os"
+    unit_number      = 0
+    size             = var.os_size
+    thin_provisioned = true
+    eagerly_scrub    = false
+  }
+
   ovf_deploy {
     local_ovf_path    = var.local_ovf_path
     remote_ovf_url    = var.local_ovf_path == null ? var.remote_ovf_url : null
@@ -138,7 +171,10 @@ resource "vsphere_virtual_machine" "vm_migrate" {
     ignore_changes = [
       host_system_id,
       annotation,
-      disk, # cache and old-root disks are attached out-of-band by the migration playbook
+      # The migration playbook hot-adds cache and old-root VMDKs at SCSI 0:1+
+      # after this resource is created, so ignore the entire disk list here.
+      # The OS disk size is set on initial create and is not expected to drift.
+      disk,
     ]
   }
 }

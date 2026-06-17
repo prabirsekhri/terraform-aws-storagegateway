@@ -6,21 +6,21 @@ output "migration_summary" {
   description = "Summary of the migration process. Marked sensitive because it includes fields derived from data.vsphere_virtual_machine.old_sgw, which the vSphere provider treats as sensitive. Use `terraform output -json migration_summary` to view."
   sensitive   = true
   value = {
-    gateway_id     = var.gateway_id
-    old_vm_name    = var.old_vm_name
-    new_vm_name    = local.new_vm_name
-    old_vm_cpus    = data.vsphere_virtual_machine.old_sgw.num_cpus
-    new_vm_cpus    = local.new_cpus
-    old_vm_memory  = data.vsphere_virtual_machine.old_sgw.memory
-    new_vm_memory  = local.new_memory
-    old_vm_os_size = data.vsphere_virtual_machine.old_sgw.disks[0].size
-    new_vm_os_size = local.new_os_size
-    old_vm_disks   = local.old_vm_disks
-    datacenter     = var.datacenter
-    datastore      = var.datastore
-    cluster        = var.cluster
-    host           = var.host
-    network        = var.network
+    gateway_id         = var.gateway_id
+    old_vm_name        = var.old_vm_name
+    new_vm_name        = local.new_vm_name
+    old_vm_cpus        = data.vsphere_virtual_machine.old_sgw.num_cpus
+    new_vm_cpus        = local.new_cpus
+    old_vm_memory      = data.vsphere_virtual_machine.old_sgw.memory
+    new_vm_memory      = local.new_memory
+    old_root_disk_size = local.old_root_disk_size
+    new_root_disk_size = local.root_block_device.size
+    old_vm_disks       = local.old_vm_disks
+    datacenter         = var.datacenter
+    datastore          = var.datastore
+    cluster            = var.cluster
+    host               = var.host
+    network            = var.network
   }
 }
 

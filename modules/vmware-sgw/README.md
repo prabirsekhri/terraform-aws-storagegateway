@@ -20,7 +20,7 @@ The defaults values are configured for a small deployment. Refer to the table be
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | 2.12.0 |
+| <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | >= 2.2.0 |
 
 ## Modules
 
@@ -55,7 +55,7 @@ No modules.
 | <a name="input_local_ovf_path"></a> [local\_ovf\_path](#input\_local\_ovf\_path) | Location on the local machine where the aws storage gateway ova is hosted. | `string` | `null` | no |
 | <a name="input_memory"></a> [memory](#input\_memory) | Total amount of memory that will be configured on the storage gateway. Specified in megabytes. 16384 MB is the minimum required for a small deployment. For a medium or a large deployment increase to 32768 or 65536 | `string` | `"16384"` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name of the storage gateway vm that will be created in vsphere | `string` | `"aws-storage-gateway"` | no |
-| <a name="input_os_size"></a> [os\_size](#input\_os\_size) | Size of the OS disk in gigabytes. When null, the OVA's default OS disk size (80 GB) is used. Set by the "migrate" deployment\_option to match the source gateway VM's OS disk size; setting it on "new-gateway" is also supported but rarely needed. | `string` | `null` | no |
+| <a name="input_os_size"></a> [os\_size](#input\_os\_size) | Size of the OS disk in gigabytes. Default 80 (matches the v2 OVA's OS disk). Used by both "new-gateway" and "migrate" deployment options. For "migrate", set to the source gateway's OS disk size to match capacity. | `string` | `"80"` | no |
 | <a name="input_provisioning_type"></a> [provisioning\_type](#input\_provisioning\_type) | Disk provisioning type for the OVF import. The v2 Storage Gateway OVA uses streamOptimized VMDKs, which can only land as "thin" during import. Disks may be inflated post-deploy if eager-zeroed thick is required. | `string` | `"thin"` | no |
 | <a name="input_remote_ovf_url"></a> [remote\_ovf\_url](#input\_remote\_ovf\_url) | URL where the aws storage gateway ova is hosted. | `string` | `"https://dd958of58tzpr.cloudfront.net/aws-storage-gateway-file-s3-gateway-v2-x86_64.ova"` | no |
 

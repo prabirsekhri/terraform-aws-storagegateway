@@ -109,10 +109,14 @@ variable "memory" {
   default     = null
 }
 
-variable "os_size" {
-  type        = string
-  description = "Size of the OS disk for the new gateway VM, in gigabytes. If not specified, matches the source VM's OS disk size so the migrated gateway has at least the same root capacity."
-  default     = null
+variable "root_block_device" {
+  type        = map(any)
+  description = "Root (OS) disk configuration for the new gateway VM. By default the new VM's OS disk matches the source gateway VM's OS disk size so the migrated gateway has at least the same root capacity. Override per-attribute via root_block_device = { size = <gigabytes> }. Currently only the 'size' key is supported because the v2 OVA forces thin / non-eager-zeroed provisioning during import."
+  default     = {}
+  validation {
+    condition     = try(tonumber(var.root_block_device.size), 80) >= 80
+    error_message = "The root_block_device size must be at least 80 GB per AWS Storage Gateway requirements."
+  }
 }
 
 variable "remote_ovf_url" {

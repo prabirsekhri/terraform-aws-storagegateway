@@ -48,9 +48,9 @@ variable "cache_size" {
 }
 
 variable "os_size" {
-  default     = null
+  default     = "80"
   type        = string
-  description = "Size of the OS disk in gigabytes. When null, the OVA's default OS disk size (80 GB) is used. Set by the \"migrate\" deployment_option to match the source gateway VM's OS disk size; setting it on \"new-gateway\" is also supported but rarely needed."
+  description = "Size of the OS disk in gigabytes. Default 80 (matches the v2 OVA's OS disk). Used by both \"new-gateway\" and \"migrate\" deployment options. For \"migrate\", set to the source gateway's OS disk size to match capacity."
 }
 
 variable "remote_ovf_url" {

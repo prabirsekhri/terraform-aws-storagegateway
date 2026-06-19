@@ -53,24 +53,22 @@ locals {
 #
 # Used for fresh Storage Gateway deployments. The OVA brings the OS disk and
 # the cache disk; inline disk blocks below override the OVA disk sizes via
-# var.os_size and var.cache_size. prevent_destroy is enabled so a stray
-# destroy does not wipe a production gateway.
+# var.os_size and var.cache_size.
 ################################################################################
 
 resource "vsphere_virtual_machine" "vm" {
   count = local.is_new_gateway ? 1 : 0
 
-  host_system_id             = data.vsphere_host.host.id
-  resource_pool_id           = data.vsphere_compute_cluster.cluster.resource_pool_id
-  datastore_id               = data.vsphere_datastore.datastore.id
-  datacenter_id              = data.vsphere_datacenter.dc.id
-  name                       = var.name
-  num_cpus                   = var.cpus
-  memory                     = var.memory
-  guest_id                   = data.vsphere_ovf_vm_template.sgw.guest_id
-  firmware                   = data.vsphere_ovf_vm_template.sgw.firmware
-  wait_for_guest_net_timeout = 1
-  sync_time_with_host        = true
+  host_system_id      = data.vsphere_host.host.id
+  resource_pool_id    = data.vsphere_compute_cluster.cluster.resource_pool_id
+  datastore_id        = data.vsphere_datastore.datastore.id
+  datacenter_id       = data.vsphere_datacenter.dc.id
+  name                = var.name
+  num_cpus            = var.cpus
+  memory              = var.memory
+  guest_id            = data.vsphere_ovf_vm_template.sgw.guest_id
+  firmware            = data.vsphere_ovf_vm_template.sgw.firmware
+  sync_time_with_host = true
 
   network_interface {
     network_id = data.vsphere_network.network.id
@@ -106,7 +104,6 @@ resource "vsphere_virtual_machine" "vm" {
   }
 
   lifecycle {
-    prevent_destroy = true
     ignore_changes = [
       host_system_id,
       annotation,
@@ -124,24 +121,22 @@ resource "vsphere_virtual_machine" "vm" {
 # Used as the replacement VM in a method-1 Storage Gateway migration. The OVA
 # brings only the OS disk; cache disks (and the old VM's root disk) are
 # detached from the source VM and attached to this VM by the migration
-# playbook. prevent_destroy is intentionally NOT set so the migration VM can
-# be torn down and rebuilt cleanly during testing.
+# playbook.
 ################################################################################
 
 resource "vsphere_virtual_machine" "vm_migrate" {
   count = local.is_new_gateway ? 0 : 1
 
-  host_system_id             = data.vsphere_host.host.id
-  resource_pool_id           = data.vsphere_compute_cluster.cluster.resource_pool_id
-  datastore_id               = data.vsphere_datastore.datastore.id
-  datacenter_id              = data.vsphere_datacenter.dc.id
-  name                       = var.name
-  num_cpus                   = var.cpus
-  memory                     = var.memory
-  guest_id                   = data.vsphere_ovf_vm_template.sgw.guest_id
-  firmware                   = data.vsphere_ovf_vm_template.sgw.firmware
-  wait_for_guest_net_timeout = 1
-  sync_time_with_host        = true
+  host_system_id      = data.vsphere_host.host.id
+  resource_pool_id    = data.vsphere_compute_cluster.cluster.resource_pool_id
+  datastore_id        = data.vsphere_datastore.datastore.id
+  datacenter_id       = data.vsphere_datacenter.dc.id
+  name                = var.name
+  num_cpus            = var.cpus
+  memory              = var.memory
+  guest_id            = data.vsphere_ovf_vm_template.sgw.guest_id
+  firmware            = data.vsphere_ovf_vm_template.sgw.firmware
+  sync_time_with_host = true
 
   network_interface {
     network_id = data.vsphere_network.network.id

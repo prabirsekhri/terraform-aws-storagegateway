@@ -107,6 +107,8 @@ The host that runs Terraform apply and the migration playbook must have network 
 3. **vCenter is reachable on TCP 443** from the host running Terraform and Ansible.
 4. **The new gateway VM will be reachable on TCP 80** from the host running Ansible (the migration API listens on port 80).
 
+> **Security:** The migration API on the new gateway VM is plain HTTP on port 80 with no authentication. It is intended for invocation from a host on the same management network as the gateway VM and should never be exposed externally. Do not place the gateway behind a firewall rule, NAT mapping, or load balancer that allows port 80 from the public internet or untrusted networks. Once Phase 2 completes, the migration endpoint is no longer needed; restrict port 80 to the gateway's normal SMB/NFS clients only.
+
 ### Information to gather before starting
 
 - Storage Gateway ID (e.g., `sgw-12A3456B`)
@@ -268,21 +270,6 @@ terraform output -raw migration_url
 terraform output next_steps
 ```
 
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| `error fetching virtual machine: vm 'X' not found` | Verify `old_vm_name` matches the source VM exactly (case-sensitive) and that `datacenter` is correct. |
-| `Cannot complete login due to an incorrect user name or password` | Service account locked, password contains characters that got mangled in tfvars (re-quote with single quotes), or the UPN suffix is wrong (try `user@vsphere.local` or `DOMAIN\user`). |
-| `Invalid configuration for device '0'` during OVA import | Ensure you're on the latest version of this example. The module sets `deployment_option = "migrate"` and `disk_provisioning = "thin"` to match what the SGW v2 OVA expects. |
-| `context deadline exceeded` during VM power-on | The OVA import or first-boot guest agent took longer than the provider's timeout. Check vCenter — if the VM is running, the apply finished and the failure is cosmetic. The provider config sets `api_timeout = 20` to give vSphere headroom; bump higher on slow datastores. |
-| `Output refers to sensitive values` on `migration_summary` | Already addressed — the output is marked `sensitive = true`. View with `terraform output -json migration_summary`. |
-| `Error: Terraform state not found` from `run-migration.sh` | The script checks for a local `terraform.tfstate` file. If you use a remote backend, comment out the check or run the playbook directly with `ansible-playbook migrate.yml -v` after exporting the same env vars. |
-| `Could not load 'yaml' callback plugin` | The `community.general.yaml` callback was removed in collection 12.x. Either install an older `community.general` (`ansible-galaxy collection install 'community.general:<12.0.0'`) or change `stdout_callback` in `ansible.cfg` to `default` with `result_format = yaml` under `[callback_default]`. |
-| `ansible-galaxy: command not found` after pip install | Activate the Python venv where Ansible was installed (`source ~/.ansible-venv/bin/activate`), or add `~/.local/bin` to PATH if you used `pip install --user`. |
-| `ABORTING: Cache dirty is X%` | Source gateway has unflushed writes. Wait for `CachePercentDirty` to reach 0 in CloudWatch before re-running. |
-| `Port 80 is not reachable` | Verify the new VM is running and the firewall between the playbook host and the new VM allows TCP 80. |
-
 ## Post-Migration Validation
 
 After the migration completes, verify everything is working correctly:
@@ -342,13 +329,13 @@ Do not run `terraform destroy` after a successful migration, as it will destroy 
 | ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5.7 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.0 |
-| <a name="requirement_vsphere"></a> [vsphere](#requirement\_vsphere) | >= 2.2.0 |
+| <a name="requirement_vsphere"></a> [vsphere](#requirement\_vsphere) | >= 2.4.0 |
 
 ## Providers
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.50.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.51.0 |
 | <a name="provider_vsphere"></a> [vsphere](#provider\_vsphere) | 2.12.0 |
 
 ## Modules
